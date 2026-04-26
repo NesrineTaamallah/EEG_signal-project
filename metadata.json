@@ -1,0 +1,5 @@
+{
+  "name": "NeuroStress Control Room",
+  "description": "Advanced EEG-based stress classification dashboard with 3D brain visualization and real-time signal processing.",
+  "requestFramePermissions": []
+}

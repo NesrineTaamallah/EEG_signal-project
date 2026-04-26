@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: #0a0f1e;
+  --color-surface: #111827;
+  --color-accent-violet: #7c3aed;
+  --color-accent-teal: #0d9488;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer base {
+  body {
+    @apply bg-background text-slate-200 font-sans antialiased;
+  }
+  
+  .monospace {
+    @apply font-mono;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-surface border border-slate-800 rounded-xl p-6 shadow-xl;
+  }
+  
+  .btn-primary {
+    @apply bg-accent-violet hover:bg-violet-700 text-white px-4 py-2 rounded-lg transition-colors font-medium disabled:opacity-50;
+  }
+  
+  .btn-secondary {
+    @apply bg-accent-teal hover:bg-teal-700 text-white px-4 py-2 rounded-lg transition-colors font-medium disabled:opacity-50;
+  }
+}

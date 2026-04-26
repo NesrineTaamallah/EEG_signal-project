@@ -1,0 +1,19 @@
+env311/
+new_env/
+node_modules/
+__pycache__/
+*.pyc
+.env
+
+# ML
+*.joblib
+*.pkl
+*.h5
+*.model
+
+# data
+data/
+catboost_info/
+
+# autres
+*.log
