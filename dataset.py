@@ -175,7 +175,7 @@ def load_all_cleaned_with_features(
         if not f.endswith(".mat"):
             continue
 
-        subject, raw_test_type, trial, test_type = parse_filename_for_meta(f)
+        subject, raw_test_type, trial, test_type   = parse_filename_for_meta(f)
 
         if subject is None or test_type is None:
             print(f"⚠ Ignoré : metadata invalide pour {f}")
