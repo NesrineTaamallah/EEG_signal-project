@@ -1,20 +1,4 @@
-"""
-classifier.py — Improved stress classifier.
 
-KEY IMPROVEMENTS over original:
-  1. DL OVERFITTING FIX: proper train/val split (never validate on train),
-     stronger regularisation (dropout 0.5, weight decay 1e-3, gradient clip),
-     smaller models, shorter training (40 epochs max + patience=7).
-  2. CLASSICAL ML: added Optuna hyperparameter search (optional),
-     better class-weighting, added LDA + SVM to the voting ensemble.
-  3. FEATURE ENGINEERING: uses new features from features.py
-     (relative power, ratios, SEF, wavelet, asymmetry).
-  4. CROSS-VALIDATION: subject-level StratifiedGroupKFold (was already there
-     but now we guarantee DL val fold never overlaps train).
-  5. DATA AUGMENTATION for DL: Gaussian noise + time-shift augmentation.
-  6. STACKING META-LEARNER: LogisticRegressionCV on out-of-fold predictions.
-  7. Saves dl_config.json so backend can reconstruct models at inference.
-"""
 
 import os
 import json
@@ -28,7 +12,6 @@ from pathlib import Path
 
 warnings.filterwarnings("ignore")
 
-# ── Classical ML ─────────────────────────────────────────────────────────────
 from sklearn.model_selection import StratifiedGroupKFold, cross_val_predict
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import RobustScaler
@@ -42,7 +25,6 @@ from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
 from catboost import CatBoostClassifier
 
-# ── Deep learning ─────────────────────────────────────────────────────────────
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -50,9 +32,7 @@ from torch.utils.data import DataLoader, TensorDataset, WeightedRandomSampler
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Configuration — edit paths here
-# ─────────────────────────────────────────────────────────────────────────────
+
 DATAFRAME_PATH  = r"C:\Users\nesri\OneDrive\Desktop\signal\data\Data\dataframe.csv"
 CLEANED_DIR     = r"C:\Users\nesri\OneDrive\Desktop\signal\data\Data\cleaned_data"
 LABELS_PATH     = r"C:\Users\nesri\OneDrive\Desktop\signal\data\Data\scales.xls"
@@ -70,7 +50,7 @@ DL_CONFIG_PATH  = os.path.join(MODELS_DIR, "dl_config.json")
 N_SPLITS     = 5
 RANDOM_STATE = 42
 SFREQ        = 256
-WIN_SEC      = 2       # IMPROVED: 2 s instead of 1 s
+WIN_SEC      = 2       
 OVERLAP      = 0.5
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -79,15 +59,9 @@ print(f"Device: {DEVICE}")
 os.makedirs(MODELS_DIR, exist_ok=True)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Deep Learning Architectures  (regularised versions)
-# ═══════════════════════════════════════════════════════════════════════════════
 
 class CNNLSTM(nn.Module):
-    """
-    Compact CNN-LSTM.
-    IMPROVEMENT: added BatchNorm, increased dropout to 0.5, reduced depth.
-    """
+    
     def __init__(self, n_channels: int = 32, time_steps: int = 512,
                  n_classes: int = 2, dropout: float = 0.5):
         super().__init__()
@@ -98,7 +72,6 @@ class CNNLSTM(nn.Module):
         self.pool  = nn.MaxPool1d(4)   # more aggressive pooling → smaller LSTM
         self.drop  = nn.Dropout(dropout)
 
-        # LSTM input length after 2 pools of 4: time_steps // 16
         self.lstm  = nn.LSTM(64, 64, num_layers=1, batch_first=True,
                              dropout=0.0, bidirectional=True)
 
@@ -117,9 +90,7 @@ class CNNLSTM(nn.Module):
 
 
 class EEGNet(nn.Module):
-    """
-    EEGNet (Lawhern et al. 2018) — unchanged architecture, higher dropout.
-    """
+    
     def __init__(self, n_channels: int = 32, time_steps: int = 512,
                  n_classes: int = 2, F1: int = 8, D: int = 2,
                  dropout: float = 0.5):
