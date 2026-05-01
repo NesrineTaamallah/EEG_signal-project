@@ -27,11 +27,18 @@ export const preprocessSignal = async (file: File) => {
 };
 
 export const predictStress = async (signal: number[][], sfreq: number) => {
-  // Ensure signal is a valid 2D array before sending
   if (!signal || !Array.isArray(signal) || signal.length === 0) {
     throw new Error("Signal data is empty or invalid");
   }
   const response = await api.post("/predict", { signal, sfreq });
+  return response.data;
+};
+
+export const extractFeatures = async (signal: number[][], sfreq: number) => {
+  if (!signal || !Array.isArray(signal) || signal.length === 0) {
+    throw new Error("Signal data is empty or invalid");
+  }
+  const response = await api.post("/extract-features", { signal, sfreq });
   return response.data;
 };
 

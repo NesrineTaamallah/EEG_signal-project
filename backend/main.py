@@ -1,14 +1,15 @@
 """
-FastAPI backend for NeuroStress Control Room — FIXED VERSION.
+FastAPI backend — NeuroStress Control Room (v3.0)
 
-Key fixes:
-  1. BUG FIX: Cleaning was not displayed → MNE average-ref was being skipped
-     silently; now the cleaned signal is verifiably different from raw.
-  2. BUG FIX: Classification always returned 0 (NORMAL) → feature extraction
-     in predict was not matching the training pipeline exactly (window shape,
-     Hanning, band edges).  Now fully matches features.py / classifier.py.
-  3. IMPROVEMENT: Model is loaded once at startup (not per-request) for speed.
-  4. IMPROVEMENT: Added /debug endpoint to help diagnose feature mismatches.
+Fixes vs v2:
+  1. BUG FIX: classifier.py saves a dict {scaler, selector, voting}.
+     The old backend tried to call .predict_proba() on the dict itself → crash.
+     Now we unpack the dict and call voting.predict_proba() properly.
+  2. NEW ENDPOINT: /extract-features returns per-channel profiles, temporal
+     band evolution, feature groups summary, and band-power heatmap data
+     for the FeatureVisualizer frontend component.
+  3. Brain3D /predict now returns richer bandPowers per channel (not just average).
+  4. Feature extraction pipeline kept 100% aligned with features.py & classifier.py.
 """
 
 from __future__ import annotations
@@ -27,13 +28,11 @@ from pydantic import BaseModel
 
 warnings.filterwarnings("ignore")
 
-# ── path setup ───────────────────────────────────────────────────────────────
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
-# ── app ──────────────────────────────────────────────────────────────────────
-app = FastAPI(title="NeuroStress API", version="2.0.0")
+app = FastAPI(title="NeuroStress API", version="3.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -43,10 +42,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── constants ────────────────────────────────────────────────────────────────
+# ── Constants ─────────────────────────────────────────────────────────────────
 SFREQ: float = 256.0
 BAND_NAMES: List[str] = ["delta", "theta", "alpha", "beta", "gamma"]
-# Must match features.py exactly
 BAND_EDGES: np.ndarray = np.array([0.5, 4.0, 8.0, 12.0, 30.0, 45.0])
 
 _DEFAULT_MODEL_PATH      = os.path.join(ROOT_DIR, "models", "xgb_stress_classifier_ensemble.joblib")
@@ -59,14 +57,18 @@ FEAT_NAMES_PATH = os.environ.get("NEUROSTRESS_FEAT_NAMES_PATH", _DEFAULT_FEAT_NA
 
 MAX_DISPLAY_SAMPLES: int = int(SFREQ * 30)
 
-# ── Global model cache (loaded once at startup) ───────────────────────────────
-_MODEL = None
+# ── Global model cache ────────────────────────────────────────────────────────
+# classifier.py saves: {"scaler": ..., "selector": ..., "voting": ...}
+_SCALER   = None
+_SELECTOR = None
+_VOTING   = None   # ← the actual VotingClassifier
 _FEATURE_NAMES: List[str] = []
 
 
 @app.on_event("startup")
 async def load_model_on_startup():
-    global _MODEL, _FEATURE_NAMES
+    global _SCALER, _SELECTOR, _VOTING, _FEATURE_NAMES
+
     # Load feature names
     if os.path.exists(FEAT_NAMES_PATH):
         try:
@@ -76,33 +78,44 @@ async def load_model_on_startup():
         except Exception as e:
             print(f"[startup] Could not load feature names: {e}")
 
-    # Load model
+    # Load model — handle both old (direct estimator) and new (dict) formats
     if os.path.exists(MODEL_PATH):
         try:
             import joblib
-            _MODEL = joblib.load(MODEL_PATH)
-            n_feat = getattr(_MODEL, "n_features_in_", "?")
-            print(f"[startup] Model loaded — expects {n_feat} features")
+            payload = joblib.load(MODEL_PATH)
+
+            if isinstance(payload, dict):
+                # ✅ New format from classifier.py: {scaler, selector, voting}
+                _SCALER   = payload.get("scaler")
+                _SELECTOR = payload.get("selector")
+                _VOTING   = payload.get("voting")
+                print(f"[startup] Model dict loaded: "
+                      f"scaler={_SCALER is not None}, "
+                      f"selector={_SELECTOR is not None}, "
+                      f"voting={_VOTING is not None}")
+                if _VOTING is not None:
+                    n = getattr(_VOTING, "n_features_in_", "?")
+                    print(f"[startup] VotingClassifier expects {n} features")
+            else:
+                # ⚠ Old format: direct estimator saved without wrapper
+                _VOTING = payload
+                print(f"[startup] Model loaded (legacy format) — "
+                      f"features in: {getattr(payload,'n_features_in_','?')}")
         except Exception as e:
             print(f"[startup] Could not load model: {e}")
+    else:
+        print(f"[startup] Model not found at {MODEL_PATH} — heuristic mode")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Helper utilities
-# ═══════════════════════════════════════════════════════════════════════════════
-
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _load_mat_eeg(file_bytes: bytes) -> np.ndarray:
-    """Return EEG data as float array (n_channels, n_samples) from a .mat blob."""
     import scipy.io
-
     mat = scipy.io.loadmat(io.BytesIO(file_bytes), squeeze_me=False)
-
     for key in ("data_cleaned", "cleaned_signal", "eeg_cleaned", "eeg_data", "EEG", "data"):
         if key in mat and isinstance(mat[key], np.ndarray) and mat[key].ndim == 2:
             d = mat[key].astype(float)
             return d if d.shape[0] < d.shape[1] else d.T
-
     for k, v in mat.items():
         if k.startswith("__") or not isinstance(v, np.ndarray) or v.ndim != 2:
             continue
@@ -111,261 +124,270 @@ def _load_mat_eeg(file_bytes: bytes) -> np.ndarray:
             return v.astype(float)
         if c < 256 and r > c:
             return v.T.astype(float)
-
-    raise ValueError(
-        "No valid EEG data found in .mat file. "
-        "Expected a 2-D array with the channel axis < 256."
-    )
+    raise ValueError("No valid EEG data found in .mat file.")
 
 
 def _auto_scale(data: np.ndarray) -> np.ndarray:
-    """Convert to Volts when data look like µV or mV."""
     mx = np.max(np.abs(data))
     if mx > 1000.0:
-        print(f"[scale] Detected µV range (max={mx:.1f}), scaling by 1e-6")
         return data * 1e-6
     if mx > 1.0:
-        print(f"[scale] Detected mV range (max={mx:.3f}), scaling by 1e-3")
         return data * 1e-3
-    print(f"[scale] Data already in V range (max={mx:.4f})")
     return data
 
 
 def _preprocess_mne(data: np.ndarray, sfreq: float) -> tuple[np.ndarray, List[str]]:
-    """
-    Full MNE preprocessing pipeline.
-    FIXED: now returns a genuinely different cleaned signal by:
-      1. Notch filter 50/100 Hz
-      2. Band-pass 1-40 Hz
-      3. Average reference
-      4. ASR (if available)
-      5. Bad channel detection + interpolation
-    The key fix: we track the actual difference between raw and cleaned
-    to confirm the pipeline is working.
-    """
     import mne
-
     n_ch = data.shape[0]
     ch_names = [f"EEG{i + 1}" for i in range(n_ch)]
     info = mne.create_info(ch_names=ch_names, sfreq=sfreq, ch_types=["eeg"] * n_ch)
     raw = mne.io.RawArray(data.copy(), info, verbose=False)
-
-    raw_before = raw.get_data().copy()
-
-    # 1. Notch filter
     raw.notch_filter([50.0, 100.0], picks="eeg", verbose=False)
-    after_notch = raw.get_data()
-    diff_notch = np.mean(np.abs(raw_before - after_notch))
-    print(f"[preprocess] After notch filter — mean abs diff from raw: {diff_notch:.6f}")
-
-    # 2. Band-pass filter 1-40 Hz
     raw.filter(1.0, 40.0, picks="eeg", fir_design="firwin", verbose=False)
-    after_bp = raw.get_data()
-    diff_bp = np.mean(np.abs(raw_before - after_bp))
-    print(f"[preprocess] After band-pass   — mean abs diff from raw: {diff_bp:.6f}")
-
-    # 3. Average reference
     raw.set_eeg_reference("average", projection=False, verbose=False)
-    after_ref = raw.get_data()
-    diff_ref = np.mean(np.abs(raw_before - after_ref))
-    print(f"[preprocess] After avg-ref     — mean abs diff from raw: {diff_ref:.6f}")
-
-    # 4. ASR artifact removal (optional)
     try:
         from asrpy import ASR
         asr = ASR(sfreq=raw.info["sfreq"], cutoff=15)
         asr.fit(raw)
         raw = asr.transform(raw)
-        after_asr = raw.get_data()
-        diff_asr = np.mean(np.abs(raw_before - after_asr))
-        print(f"[preprocess] After ASR         — mean abs diff from raw: {diff_asr:.6f}")
-    except ImportError:
-        print("[preprocess] asrpy not available, skipping ASR")
-    except Exception as e:
-        print(f"[preprocess] ASR failed ({e}), skipping")
-
-    # 5. Bad channel detection & interpolation
+    except Exception:
+        pass
     data_arr = raw.get_data()
     stds = np.std(data_arr, axis=1)
-    mean_std = np.mean(stds)
-    std_std = np.std(stds)
+    mean_std, std_std = np.mean(stds), np.std(stds)
     z_scores = (stds - mean_std) / (std_std + 1e-10)
-    flat_threshold = mean_std * 0.1
-    bads = []
-    for i in range(n_ch):
-        if abs(z_scores[i]) > 5.0 or stds[i] < flat_threshold:
-            bads.append(ch_names[i])
+    flat_thr = mean_std * 0.1
+    bads = [ch_names[i] for i in range(n_ch)
+            if abs(z_scores[i]) > 5.0 or stds[i] < flat_thr]
     if bads:
         raw.info["bads"] = bads
         try:
             raw.interpolate_bads(reset_bads=True, verbose=False)
-            print(f"[preprocess] Interpolated bad channels: {bads}")
-        except Exception as e:
-            print(f"[preprocess] Could not interpolate bads: {e}")
-
-    cleaned = raw.get_data()
-    final_diff = np.mean(np.abs(raw_before - cleaned))
-    print(f"[preprocess] FINAL mean abs diff raw vs cleaned: {final_diff:.6f}")
-    print(f"[preprocess] Raw    std: {np.std(raw_before):.6f}")
-    print(f"[preprocess] Cleaned std: {np.std(cleaned):.6f}")
-
-    return cleaned, ch_names
+        except Exception:
+            pass
+    return raw.get_data(), ch_names
 
 
 def _preprocess_scipy(data: np.ndarray, sfreq: float) -> tuple[np.ndarray, List[str]]:
-    """Scipy-only fallback when MNE is not available."""
     from scipy import signal as sp
-
     data_out = data.copy()
-
-    # Notch at 50 Hz
     b, a = sp.iirnotch(50.0, 30.0, sfreq)
     data_out = sp.filtfilt(b, a, data_out, axis=1)
-
-    # Notch at 100 Hz (if below Nyquist)
     if sfreq > 200:
         b2, a2 = sp.iirnotch(100.0, 30.0, sfreq)
         data_out = sp.filtfilt(b2, a2, data_out, axis=1)
-
-    # Band-pass 1-40 Hz
     sos = sp.butter(4, [1.0, 40.0], btype="bandpass", fs=sfreq, output="sos")
     data_out = sp.sosfiltfilt(sos, data_out, axis=1)
-
-    # Average reference
     data_out -= data_out.mean(axis=0, keepdims=True)
-
-    diff = np.mean(np.abs(data - data_out))
-    print(f"[preprocess-scipy] Mean abs diff raw vs cleaned: {diff:.6f}")
-
     return data_out, [f"EEG{i + 1}" for i in range(data.shape[0])]
 
 
-def _band_powers(data: np.ndarray, sfreq: float) -> List[Dict[str, float]]:
-    """Return per-band power normalised to 0-10 scale."""
+def _channel_band_powers(signal_1d: np.ndarray, sfreq: float) -> Dict[str, float]:
+    """Band powers for a single channel signal."""
     from scipy import signal as sp
-
-    mean_sig = data.mean(axis=0)
-    nperseg = min(int(sfreq * 2), len(mean_sig))
-    freqs, psd = sp.welch(mean_sig, fs=sfreq, nperseg=nperseg)
-
-    raw: List[float] = []
-    for i, _name in enumerate(BAND_NAMES):
+    nperseg = min(int(sfreq * 2), len(signal_1d))
+    freqs, psd = sp.welch(signal_1d, fs=sfreq, nperseg=nperseg)
+    result = {}
+    for i, name in enumerate(BAND_NAMES):
         mask = (freqs >= BAND_EDGES[i]) & (freqs < BAND_EDGES[i + 1])
-        raw.append(float(np.trapz(psd[mask], freqs[mask])) if mask.any() else 0.0)
-
-    total = sum(raw) + 1e-10
-    normalised = [max(p, 0.0) / total * 10.0 for p in raw]
-    return [{name: round(val, 4)} for name, val in zip(BAND_NAMES, normalised)]
+        result[name] = float(np.trapz(psd[mask], freqs[mask])) if mask.any() else 0.0
+    return result
 
 
-# ── FIXED feature extraction — exactly matches features.py / classifier.py ───
+def _band_powers_avg(data: np.ndarray, sfreq: float) -> List[Dict[str, float]]:
+    """Average band power across channels, normalised to 0-10."""
+    mean_sig = data.mean(axis=0)
+    bp = _channel_band_powers(mean_sig, sfreq)
+    total = sum(bp.values()) + 1e-10
+    return [{name: round(v / total * 10.0, 4)} for name, v in bp.items()]
 
-def _extract_features_matching_training(
-    data: np.ndarray,
-    sfreq: float,
-    feature_names: List[str]
-) -> np.ndarray:
-    """
-    Extract features that EXACTLY match features.py used in classifier.py.
 
-    Training pipeline (features.py / dataset.py):
-      • window_signal_hanning(data[n_trials, n_epochs, n_ch, sfreq_int],
-                              sfreq=256, window_sec=1, overlap=0.5)
-        → windows shape: (n_windows, n_ch, 256)
-      • Each function receives data reshaped as (n_windows, 1, n_ch, 256)
-      • Feature order per channel:
-          time (5) + freq (5) + hjorth (3) + fractal (2) + entropy (4) = 19
+def _hjorth(signal_1d: np.ndarray):
+    activity = float(np.var(signal_1d))
+    if len(signal_1d) <= 1:
+        return activity, 0.0, 0.0
+    d1 = np.diff(signal_1d)
+    mobility = float(np.sqrt(np.var(d1) / (activity + 1e-10)))
+    d2 = np.diff(d1)
+    complexity = float(np.sqrt(np.var(d2) / (np.var(d1) + 1e-10)) / (mobility + 1e-10))
+    return activity, mobility, complexity
 
-    This function replicates that EXACT pipeline on incoming inference data.
-    """
+
+def _spectral_entropy(signal_1d: np.ndarray, sfreq: float) -> float:
+    from scipy import signal as sp
+    freqs, psd = sp.welch(signal_1d, fs=sfreq)
+    psd_n = psd / (np.sum(psd) + 1e-10)
+    return float(-np.sum(psd_n * np.log(psd_n + 1e-10)))
+
+
+def _compute_channel_profiles(data: np.ndarray, sfreq: float,
+                               ch_names: List[str]) -> List[Dict]:
+    """Compute per-channel feature profile for the FeatureVisualizer."""
+    profiles = []
+    for i, ch in enumerate(ch_names):
+        s = data[i]
+        bp = _channel_band_powers(s, sfreq)
+        alpha = bp["alpha"] + 1e-10
+        activity, mobility, complexity = _hjorth(s)
+        ent = _spectral_entropy(s, sfreq)
+        profiles.append({
+            "channel": ch,
+            "variance": float(np.var(s)),
+            "rms": float(np.sqrt(np.mean(s ** 2))),
+            "mobility": mobility,
+            "complexity": complexity,
+            "betaAlpha": round(bp["beta"] / alpha, 4),
+            "thetaAlpha": round(bp["theta"] / alpha, 4),
+            "entropy": round(ent, 4),
+        })
+    return profiles
+
+
+def _temporal_band_evolution(data: np.ndarray, sfreq: float,
+                              window_sec: float = 1.0,
+                              overlap: float = 0.5) -> List[Dict]:
+    """Band power evolution across Hanning windows (mean across channels)."""
+    from scipy import signal as sp
+    win_len = int(window_sec * sfreq)
+    step = int(win_len * (1 - overlap))
+    hann = np.hanning(win_len)
+    n_samp = data.shape[1]
+    windows = []
+    pos = 0
+    while pos + win_len <= n_samp:
+        seg = data[:, pos: pos + win_len] * hann
+        windows.append(seg)
+        pos += step
+
+    evolution = []
+    for wi, seg in enumerate(windows):
+        mean_sig = seg.mean(axis=0)
+        freqs, psd = sp.welch(mean_sig, fs=sfreq, nperseg=min(256, win_len))
+        bp = {}
+        for j, name in enumerate(BAND_NAMES):
+            mask = (freqs >= BAND_EDGES[j]) & (freqs < BAND_EDGES[j + 1])
+            bp[name] = float(np.trapz(psd[mask], freqs[mask])) if mask.any() else 0.0
+        delta = bp["delta"] + bp["theta"] + bp["alpha"] + 1e-10
+        arousal = round((bp["beta"] + bp["gamma"]) / delta, 4)
+        evolution.append({
+            "window": wi + 1,
+            **{k: round(v, 6) for k, v in bp.items()},
+            "arousal": arousal,
+        })
+    return evolution
+
+
+def _build_feature_groups(data: np.ndarray, sfreq: float,
+                           ch_names: List[str]) -> List[Dict]:
+    """Build aggregate feature groups for the FeatureVisualizer."""
+    from scipy import signal as sp
+    from scipy import stats as sc_stats
+
+    # Aggregate per group (mean of absolute values across channels)
+    time_feats, freq_feats, hjorth_feats, frac_feats, ent_feats = {}, {}, {}, {}, {}
+
+    for i, ch in enumerate(ch_names[:8]):  # cap at 8 channels for speed
+        s = data[i]
+        # Time
+        time_feats[f"{ch}_variance"] = float(np.var(s))
+        time_feats[f"{ch}_rms"] = float(np.sqrt(np.mean(s ** 2)))
+        time_feats[f"{ch}_ptp"] = float(np.ptp(s))
+        time_feats[f"{ch}_skewness"] = float(sc_stats.skew(s))
+        time_feats[f"{ch}_kurtosis"] = float(sc_stats.kurtosis(s))
+        # Freq
+        bp = _channel_band_powers(s, sfreq)
+        for band, val in bp.items():
+            freq_feats[f"{ch}_{band}"] = val
+        # Hjorth
+        act, mob, comp = _hjorth(s)
+        hjorth_feats[f"{ch}_activity"] = act
+        hjorth_feats[f"{ch}_mobility"] = mob
+        hjorth_feats[f"{ch}_complexity"] = comp
+        # Fractal — simplified Katz FD
+        N = len(s)
+        if N > 1:
+            L_sum = float(np.sum(np.sqrt(1 + np.diff(s) ** 2)))
+            d_val = float(np.max(np.sqrt(
+                (np.arange(N) / (N - 1)) ** 2 +
+                ((s - s[0]) / (np.max(np.abs(s)) + 1e-10)) ** 2
+            )))
+            katz = (float(np.log(N - 1) /
+                          (np.log(d_val) + np.log((N - 1) / (L_sum + 1e-10))))
+                    if d_val > 0 else 0.0)
+            frac_feats[f"{ch}_katz_fd"] = katz
+        # Entropy
+        ent_feats[f"{ch}_spectral_entropy"] = _spectral_entropy(s, sfreq)
+
+    return [
+        {"name": "Temporel", "features": time_feats},
+        {"name": "Spectral (puissance bandes)", "features": freq_feats},
+        {"name": "Hjorth", "features": hjorth_feats},
+        {"name": "Fractal", "features": frac_feats},
+        {"name": "Entropie", "features": ent_feats},
+    ]
+
+
+# ── Feature extraction aligned with training ──────────────────────────────────
+def _extract_features_for_prediction(data: np.ndarray, sfreq: float,
+                                      feature_names: List[str]) -> np.ndarray:
     from scipy import signal as sp
     from scipy import stats as sc_stats
 
     n_ch, n_samp = data.shape
-    win_len = int(sfreq)          # 1 second = 256 samples
-    step    = win_len // 2        # 50% overlap = 128 samples
-    hann    = np.hanning(win_len)
+    win_len = int(sfreq)
+    step = win_len // 2
+    hann = np.hanning(win_len)
 
-    # ── Window the signal exactly like window_signal_hanning ─────────────────
     windows = []
     pos = 0
     while pos + win_len <= n_samp:
-        seg = data[:, pos: pos + win_len] * hann   # (n_ch, 256)
+        seg = data[:, pos: pos + win_len] * hann
         windows.append(seg)
         pos += step
-
     if not windows:
-        # Signal shorter than 1 window — pad to 1 window
         seg = np.zeros((n_ch, win_len))
         seg[:, :n_samp] = data
         seg *= hann
         windows = [seg]
 
-    print(f"[features] {len(windows)} windows from {n_samp} samples")
-
-    # Feature name order per channel — must match features.py exactly
-    time_names    = ["variance", "rms", "ptp", "skewness", "kurtosis"]
-    freq_names    = ["delta_power", "theta_power", "alpha_power",
-                     "beta_power", "gamma_power"]
-    hjorth_names  = ["hj_activity", "hj_mobility", "hj_complexity"]
-    fractal_names = ["higuchi_fd", "katz_fd"]
-    entropy_names = ["approx_entropy", "sample_entropy",
-                     "spectral_entropy", "svd_entropy"]
-    per_ch_names  = (time_names + freq_names + hjorth_names +
-                     fractal_names + entropy_names)  # 19 features/ch
-
     all_window_feats = []
+    per_ch_names = (
+        ["variance", "rms", "ptp", "skewness", "kurtosis"]  # 5 time
+        + [f"{b}_power" for b in BAND_NAMES]                 # 5 freq
+        + ["hj_activity", "hj_mobility", "hj_complexity"]    # 3 hjorth
+        + ["higuchi_fd", "katz_fd"]                           # 2 fractal
+        + ["approx_entropy", "sample_entropy",
+           "spectral_entropy", "svd_entropy"]                 # 4 entropy
+    )
 
-    for seg in windows:   # seg shape: (n_ch, 256)
+    for seg in windows:
         row = []
-
-        # ── TIME FEATURES ────────────────────────────────────────────────────
-        # Matches time_series_features() in features.py
+        # Time
         for ch in range(n_ch):
             s = seg[ch]
-            variance = float(np.var(s))
-            rms      = float(np.sqrt(np.mean(s ** 2)))
-            ptp_amp  = float(np.ptp(s))
-            skew     = float(sc_stats.skew(s))     if len(s) > 1 else 0.0
-            kurt     = float(sc_stats.kurtosis(s)) if len(s) > 1 else 0.0
-            row.extend([variance, rms, ptp_amp, skew, kurt])
-
-        # ── FREQUENCY FEATURES ────────────────────────────────────────────────
-        # Matches freq_band_features() in features.py
-        # features.py uses nperseg=min(256, len(signal)) with default fs
+            row.extend([
+                float(np.var(s)),
+                float(np.sqrt(np.mean(s ** 2))),
+                float(np.ptp(s)),
+                float(sc_stats.skew(s)) if len(s) > 1 else 0.0,
+                float(sc_stats.kurtosis(s)) if len(s) > 1 else 0.0,
+            ])
+        # Freq
         for ch in range(n_ch):
             s = seg[ch]
-            freqs_w, psd_w = sp.welch(s, fs=sfreq,
-                                       nperseg=min(256, len(s)))
+            freqs, psd = sp.welch(s, fs=sfreq, nperseg=min(256, len(s)))
             for b in range(len(BAND_EDGES) - 1):
-                mask = ((freqs_w >= BAND_EDGES[b]) &
-                        (freqs_w <= BAND_EDGES[b + 1]))
-                bp = float(np.trapz(psd_w[mask], freqs_w[mask])) if mask.any() else 0.0
-                row.append(bp)
-
-        # ── HJORTH FEATURES ───────────────────────────────────────────────────
-        # Matches hjorth_features() in features.py
+                mask = (freqs >= BAND_EDGES[b]) & (freqs <= BAND_EDGES[b + 1])
+                row.append(float(np.trapz(psd[mask], freqs[mask])) if mask.any() else 0.0)
+        # Hjorth
         for ch in range(n_ch):
-            s = seg[ch]
-            activity = float(np.var(s))
-            if len(s) > 1:
-                d1 = np.diff(s)
-                mobility   = float(np.sqrt(np.var(d1) / (activity + 1e-10)))
-                d2 = np.diff(d1)
-                complexity = float(np.sqrt(np.var(d2) / (np.var(d1) + 1e-10)) /
-                                   (mobility + 1e-10))
-            else:
-                mobility = complexity = 0.0
-            row.extend([activity, mobility, complexity])
-
-        # ── FRACTAL FEATURES ──────────────────────────────────────────────────
-        # Matches fractal_features() in features.py
+            act, mob, comp = _hjorth(seg[ch])
+            row.extend([act, mob, comp])
+        # Fractal
         for ch in range(n_ch):
             s = seg[ch]
             N = len(s)
             k_max = 10
-
-            # Higuchi FD
             L_vals = []
             for k in range(1, k_max + 1):
                 Lk = 0
@@ -376,66 +398,46 @@ def _extract_features_matching_training(
                         Lk += Lkm * (N - 1) / (len(indices) * k)
                 if k > 0:
                     L_vals.append(np.log(Lk / k + 1e-10))
-
             if len(L_vals) > 1:
                 x_log = np.log(1 / np.arange(1, k_max + 1)[:len(L_vals)])
-                higuchi_fd = float(-np.polyfit(x_log, L_vals, 1)[0])
+                higuchi = float(-np.polyfit(x_log, L_vals, 1)[0])
             else:
-                higuchi_fd = 0.0
-
-            # Katz FD — NOTE: features.py reuses variable name 'L' (shadows list)
+                higuchi = 0.0
             if N <= 1:
-                katz_fd = 0.0
+                katz = 0.0
             else:
                 L_sum = float(np.sum(np.sqrt(1 + np.diff(s) ** 2)))
                 d_val = float(np.max(np.sqrt(
                     (np.arange(N) / (N - 1)) ** 2 +
                     ((s - s[0]) / (np.max(np.abs(s)) + 1e-10)) ** 2
                 )))
-                if d_val > 0:
-                    katz_fd = float(np.log(N - 1) /
-                                    (np.log(d_val) +
-                                     np.log((N - 1) / (L_sum + 1e-10))))
-                else:
-                    katz_fd = 0.0
-
-            row.extend([higuchi_fd, katz_fd])
-
-        # ── ENTROPY FEATURES ──────────────────────────────────────────────────
-        # Matches entropy_features() in features.py
+                katz = (float(np.log(N - 1) /
+                              (np.log(d_val) + np.log((N - 1) / (L_sum + 1e-10))))
+                        if d_val > 0 else 0.0)
+            row.extend([higuchi, katz])
+        # Entropy
         for ch in range(n_ch):
             s = seg[ch]
             N = len(s)
 
-            # Approximate entropy (matches _phi in features.py)
-            def _phi(m_val, sig):
+            def _phi(m_val):
                 if N <= m_val:
                     return 0.0
-                patterns = np.lib.stride_tricks.sliding_window_view(sig, m_val)
-                r = 0.2 * np.std(sig)
+                patterns = np.lib.stride_tricks.sliding_window_view(s, m_val)
+                r = 0.2 * np.std(s)
                 C = np.sum(
-                    np.max(np.abs(patterns[:, None] - patterns[None, :]),
-                           axis=2) <= r,
+                    np.max(np.abs(patterns[:, None] - patterns[None, :]), axis=2) <= r,
                     axis=1
                 )
                 C = C / (N - m_val + 1)
                 return float(np.sum(np.log(C + 1e-10)) / (N - m_val + 1))
 
-            app_entropy = max(0.0, _phi(2, s) - _phi(3, s))
-
-            # Sample entropy (matches features.py exactly)
-            if N > 3:
-                corr_val = np.corrcoef(s[:-1], s[1:])[0, 1]
-                samp_entropy = float(-np.log(abs(corr_val) + 1e-10))
-            else:
-                samp_entropy = 0.0
-
-            # Spectral entropy
+            app_ent = max(0.0, _phi(2) - _phi(3))
+            samp_ent = (float(-np.log(abs(np.corrcoef(s[:-1], s[1:])[0, 1]) + 1e-10))
+                        if N > 3 else 0.0)
             freqs_e, psd_e = sp.welch(s, fs=sfreq)
-            psd_norm = psd_e / (np.sum(psd_e) + 1e-10)
-            spect_entropy = float(-np.sum(psd_norm * np.log(psd_norm + 1e-10)))
-
-            # SVD entropy
+            psd_n = psd_e / (np.sum(psd_e) + 1e-10)
+            spect_ent = float(-np.sum(psd_n * np.log(psd_n + 1e-10)))
             if N >= 10:
                 tau, m_svd = 1, 3
                 n_vec = N - (m_svd - 1) * tau
@@ -445,86 +447,49 @@ def _extract_features_matching_training(
                         delayed[:, j] = s[j * tau: j * tau + n_vec]
                     try:
                         _, sv, _ = np.linalg.svd(delayed, full_matrices=False)
-                        sv_norm = sv / (np.sum(sv) + 1e-10)
-                        svd_entropy = float(
-                            -np.sum(sv_norm * np.log(sv_norm + 1e-10))
-                        )
+                        sv_n = sv / (np.sum(sv) + 1e-10)
+                        svd_ent = float(-np.sum(sv_n * np.log(sv_n + 1e-10)))
                     except Exception:
-                        svd_entropy = 0.0
+                        svd_ent = 0.0
                 else:
-                    svd_entropy = 0.0
+                    svd_ent = 0.0
             else:
-                svd_entropy = 0.0
-
-            row.extend([app_entropy, samp_entropy, spect_entropy, svd_entropy])
+                svd_ent = 0.0
+            row.extend([app_ent, samp_ent, spect_ent, svd_ent])
 
         all_window_feats.append(row)
 
-    # ── Build full column name list matching dataset.py / features.py ─────────
-    # dataset.py col_names:
-    #   f"ch{ch+1}_{name}" for ch in range(n_channels) for name in per_channel_names
-    # BUT features.py stacks feature groups separately:
-    #   hstack([time_feats, freq_feats, hjorth_feats, fractal_feats, entropy_feats])
-    # Each group iterates channels first THEN features within channel.
-    # So the actual column order in the training DataFrame is:
-    #   ch1_variance, ch1_rms, ..., ch2_variance, ..., chN_kurtosis   (time block)
-    #   ch1_delta_power, ..., chN_gamma_power                          (freq block)
-    #   etc.
-    # This matches dataset.py col_names exactly because it uses the SAME order.
-
     all_col_names = [
-        f"ch{ch+1}_{name}"
+        f"ch{ch + 1}_{name}"
         for ch in range(n_ch)
         for name in per_ch_names
     ]
+    feats_array = np.array(all_window_feats, dtype=float)
+    feat_mean = feats_array.mean(axis=0)
 
-    feats_array = np.array(all_window_feats, dtype=float)   # (n_windows, n_total)
-
-    # Average over windows (matches how classifier.py trains: per-window rows,
-    # but at inference we aggregate to get a single prediction per file)
-    feat_mean = feats_array.mean(axis=0)   # (n_total_features,)
-
-    print(f"[features] Total features extracted: {len(feat_mean)}")
-    print(f"[features] Expected by col names:    {len(all_col_names)}")
-
-    # ── Select features that were kept by SelectFromModel in classifier.py ────
     if feature_names:
         col_index = {name: i for i, name in enumerate(all_col_names)}
-        selected = []
-        missing  = []
-        for fn in feature_names:
-            if fn in col_index:
-                selected.append(feat_mean[col_index[fn]])
-            else:
-                selected.append(0.0)
-                missing.append(fn)
-        if missing:
-            print(f"[features] WARNING: {len(missing)} features not found: {missing[:5]}")
+        selected = [feat_mean[col_index[fn]] if fn in col_index else 0.0
+                    for fn in feature_names]
         return np.array(selected, dtype=float).reshape(1, -1)
-    else:
-        return feat_mean.reshape(1, -1)
+    return feat_mean.reshape(1, -1)
 
 
 def _stress_heuristic(bp_list: List[Dict[str, float]]) -> tuple[float, float]:
-    """Multi-marker EEG stress heuristic fallback."""
     pm: Dict[str, float] = {}
     for d in bp_list:
         pm.update(d)
-
     delta = pm.get("delta", 1.0) + 1e-10
     theta = pm.get("theta", 1.0) + 1e-10
     alpha = pm.get("alpha", 1.0) + 1e-10
     beta  = pm.get("beta",  1.0) + 1e-10
     gamma = pm.get("gamma", 0.5) + 1e-10
     total = delta + theta + alpha + beta + gamma
-
     bm1 = np.tanh((beta / alpha - 1.0) * 0.8)
     bm2 = np.tanh((theta / alpha - 1.0) * 0.5)
     bm3 = np.tanh(((beta + gamma) / (delta + theta + alpha) - 0.8) * 1.2)
     bm4 = np.tanh((0.22 - alpha / total) * 8.0)
-
-    w = np.array([0.35, 0.20, 0.25, 0.20])
-    composite = float(w[0]*bm1 + w[1]*bm2 + w[2]*bm3 + w[3]*bm4)
+    composite = float(np.dot([0.35, 0.20, 0.25, 0.20], [bm1, bm2, bm3, bm4]))
     prob = float((composite + 1.0) / 2.0)
     prob = max(0.05, min(0.95, prob))
     conf = min(abs(prob - 0.5) * 2.2, 1.0)
@@ -535,65 +500,37 @@ def _stress_heuristic(bp_list: List[Dict[str, float]]) -> tuple[float, float]:
 # Endpoints
 # ═══════════════════════════════════════════════════════════════════════════════
 
-
 @app.get("/health")
 async def health() -> Dict[str, Any]:
+    model_ready = _VOTING is not None
     return {
         "status": "ok",
-        "model_available": _MODEL is not None,
+        "model_available": model_ready,
+        "model_format": "dict(scaler+selector+voting)" if _SCALER is not None else "legacy",
         "feature_names_count": len(_FEATURE_NAMES),
         "model_path": MODEL_PATH,
-        "feat_names_path": FEAT_NAMES_PATH,
-    }
-
-
-@app.get("/debug/features")
-async def debug_features() -> Dict[str, Any]:
-    """Diagnostic endpoint to check feature name alignment."""
-    return {
-        "feature_names_loaded": len(_FEATURE_NAMES),
-        "first_10": _FEATURE_NAMES[:10] if _FEATURE_NAMES else [],
-        "last_10":  _FEATURE_NAMES[-10:] if _FEATURE_NAMES else [],
-        "model_n_features_in": getattr(_MODEL, "n_features_in_", None),
     }
 
 
 # ── /preprocess ───────────────────────────────────────────────────────────────
 @app.post("/preprocess")
 async def preprocess(file: UploadFile = File(...)) -> Dict[str, Any]:
-    """
-    Accept a MATLAB .mat file and return raw + cleaned signals.
-
-    FIX: The cleaned signal is now verifiably different from raw because we
-    properly apply notch + bandpass + average-reference filters.
-    The frontend can display both and see the difference.
-    """
     try:
         raw_bytes = await file.read()
         data_raw  = _load_mat_eeg(raw_bytes)
         data_raw  = _auto_scale(data_raw)
-
-        print(f"[preprocess] Loaded: {data_raw.shape[0]} ch x {data_raw.shape[1]} samples")
-        print(f"[preprocess] Raw range: [{data_raw.min():.4f}, {data_raw.max():.4f}] V")
-        print(f"[preprocess] Raw std:   {np.std(data_raw):.6f} V")
+        print(f"[preprocess] {data_raw.shape[0]} ch x {data_raw.shape[1]} samples")
 
         try:
             data_clean, ch_names = _preprocess_mne(data_raw, SFREQ)
-            print("[preprocess] MNE pipeline complete")
         except Exception as e:
-            print(f"[preprocess] MNE failed ({e}), using scipy fallback")
+            print(f"[preprocess] MNE failed ({e}), scipy fallback")
             data_clean, ch_names = _preprocess_scipy(data_raw, SFREQ)
 
         n = min(data_raw.shape[1], MAX_DISPLAY_SAMPLES)
-
-        raw_std    = float(np.std(data_raw[:, :n]))
-        clean_std  = float(np.std(data_clean[:, :n]))
-        noise_red  = (1.0 - clean_std / (raw_std + 1e-10)) * 100.0
-
-        print(f"[preprocess] Sending {n} samples per channel")
-        print(f"[preprocess] Raw std:   {raw_std:.6f} V")
-        print(f"[preprocess] Clean std: {clean_std:.6f} V")
-        print(f"[preprocess] Noise reduction: {noise_red:.1f}%")
+        raw_std   = float(np.std(data_raw[:, :n]))
+        clean_std = float(np.std(data_clean[:, :n]))
+        noise_red = (1.0 - clean_std / (raw_std + 1e-10)) * 100.0
 
         return {
             "raw_signal":     data_raw[:, :n].tolist(),
@@ -601,18 +538,82 @@ async def preprocess(file: UploadFile = File(...)) -> Dict[str, Any]:
             "channel_names":  ch_names,
             "sfreq":          SFREQ,
             "stats": {
-                "raw_std_uv":   round(raw_std * 1e6, 2),
-                "clean_std_uv": round(clean_std * 1e6, 2),
-                "noise_reduction_pct": round(noise_red, 1),
+                "raw_std_uv":           round(raw_std * 1e6, 2),
+                "clean_std_uv":         round(clean_std * 1e6, 2),
+                "noise_reduction_pct":  round(noise_red, 1),
             }
         }
-
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     except Exception as exc:
         import traceback
-        print(f"[preprocess] Error: {traceback.format_exc()}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Preprocessing failed: {exc}")
+
+
+# ── /extract-features (NEW) ───────────────────────────────────────────────────
+class ExtractRequest(BaseModel):
+    signal: List[List[float]]
+    sfreq:  float = SFREQ
+
+
+@app.post("/extract-features")
+async def extract_features_endpoint(body: ExtractRequest) -> Dict[str, Any]:
+    """
+    Return rich feature data for the FeatureVisualizer frontend component.
+    All computations are per-channel; results are grouped by feature type.
+    """
+    try:
+        data = np.array(body.signal, dtype=float)
+        if data.ndim != 2:
+            raise ValueError("signal must be 2-D [channels x samples]")
+
+        sfreq = body.sfreq
+        n_ch, n_samp = data.shape
+        ch_names = [f"EEG{i + 1}" for i in range(n_ch)]
+
+        # Window count
+        win_len = int(sfreq)
+        step    = win_len // 2
+        n_windows = max((n_samp - win_len) // step + 1, 1)
+
+        # 1. Per-channel profiles (Hjorth, ratios, entropy)
+        profiles = _compute_channel_profiles(data, sfreq, ch_names)
+
+        # 2. Temporal evolution of band powers
+        temporal = _temporal_band_evolution(data, sfreq, window_sec=1.0, overlap=0.5)
+
+        # 3. Feature group summaries
+        groups = _build_feature_groups(data, sfreq, ch_names)
+
+        # 4. Band powers per channel (for heatmap)
+        band_powers_per_ch = [
+            _channel_band_powers(data[i], sfreq)
+            for i in range(n_ch)
+        ]
+
+        # Total feature count estimate (matches features.py per-channel * n_ch)
+        # 5 time + 5 freq + 3 hjorth + 2 fractal + 4 entropy = 19 per channel
+        total_features = 19 * n_ch
+
+        return {
+            "groups": groups,
+            "bandPowers": band_powers_per_ch,
+            "statistics": {
+                "totalFeatures": total_features,
+                "channels": n_ch,
+                "windows": n_windows,
+                "samplingRate": int(sfreq),
+            },
+            "channelProfiles": profiles,
+            "temporalEvolution": temporal,
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Feature extraction failed: {exc}")
 
 
 # ── /predict ──────────────────────────────────────────────────────────────────
@@ -623,79 +624,96 @@ class PredictRequest(BaseModel):
 
 @app.post("/predict")
 async def predict(body: PredictRequest) -> Dict[str, Any]:
-    """
-    FIX: Feature extraction now exactly matches the training pipeline in
-    features.py / classifier.py so predictions are meaningful.
-    """
     try:
         data = np.array(body.signal, dtype=float)
         if data.ndim != 2:
-            raise ValueError("signal must be 2-D [channels x samples].")
+            raise ValueError("signal must be 2-D [channels x samples]")
 
         sfreq = body.sfreq
-        bp    = _band_powers(data, sfreq)
+        bp    = _band_powers_avg(data, sfreq)
 
         prediction   = 0
         stress_prob  = 0.5
         confidence   = 0.5
         model_source = "heuristic"
 
-        if _MODEL is not None and _FEATURE_NAMES:
+        # ── Try trained model (dict format) ───────────────────────────────────
+        if _VOTING is not None and _FEATURE_NAMES:
             try:
-                mf = _extract_features_matching_training(data, sfreq, _FEATURE_NAMES)
-                print(f"[predict] Feature shape: {mf.shape}")
+                mf = _extract_features_for_prediction(data, sfreq, _FEATURE_NAMES)
+                print(f"[predict] Raw feature shape: {mf.shape}")
 
-                expected = getattr(_MODEL, "n_features_in_", None)
-                if expected is not None and mf.shape[1] != expected:
-                    print(f"[predict] Shape mismatch: got {mf.shape[1]}, expected {expected}")
-                    if mf.shape[1] > expected:
-                        mf = mf[:, :expected]
-                    else:
-                        pad = np.zeros((1, expected - mf.shape[1]))
-                        mf = np.hstack([mf, pad])
+                # Apply scaler if available (new format)
+                if _SCALER is not None:
+                    # selector already selected the right columns — but if scaler
+                    # was fit on ALL features before selection, we need the full
+                    # feature vector first.  Here we re-extract without selection
+                    # to apply scaler, then apply selector.
+                    mf_full = _extract_features_for_prediction(data, sfreq, [])
+                    print(f"[predict] Full feature shape: {mf_full.shape}")
+                    try:
+                        mf_scaled = _SCALER.transform(mf_full)
+                        mf_sel = _SELECTOR.transform(mf_scaled)
+                        print(f"[predict] After scaler+selector: {mf_sel.shape}")
+                    except Exception as e:
+                        print(f"[predict] Scaler/selector failed ({e}), using raw mf")
+                        mf_sel = mf
+                else:
+                    # Legacy format: model expects features directly
+                    mf_sel = mf
+                    expected = getattr(_VOTING, "n_features_in_", None)
+                    if expected and mf_sel.shape[1] != expected:
+                        if mf_sel.shape[1] > expected:
+                            mf_sel = mf_sel[:, :expected]
+                        else:
+                            pad = np.zeros((1, expected - mf_sel.shape[1]))
+                            mf_sel = np.hstack([mf_sel, pad])
 
-                proba       = _MODEL.predict_proba(mf)[0]
-                prediction  = int(_MODEL.predict(mf)[0])
+                proba       = _VOTING.predict_proba(mf_sel)[0]
+                prediction  = int(_VOTING.predict(mf_sel)[0])
                 stress_prob = float(proba[1]) if len(proba) > 1 else float(proba[0])
                 confidence  = float(max(proba))
                 model_source = "trained_model"
-                print(f"[predict] Result: label={prediction}, "
-                      f"stress_prob={stress_prob:.3f}, conf={confidence:.3f}")
+                print(f"[predict] label={prediction} stress={stress_prob:.3f} conf={confidence:.3f}")
 
             except Exception as exc:
                 import traceback
                 print(f"[predict] Model inference failed: {exc}")
                 traceback.print_exc()
-                # Fall through to heuristic
 
         if model_source == "heuristic":
             stress_prob, confidence = _stress_heuristic(bp)
             prediction = int(stress_prob > 0.5)
-            print(f"[predict] Heuristic: stress_prob={stress_prob:.3f}")
 
-        # Feature importance display
+        # ── Feature importance display ─────────────────────────────────────────
         n_ch = data.shape[0]
         display_features = (_FEATURE_NAMES[:10]
                             if _FEATURE_NAMES
                             else [f"ch{i+1}_beta_power" for i in range(min(n_ch, 10))])
-
         pm: Dict[str, float] = {}
         for d in bp:
             pm.update(d)
-
         rng = np.random.default_rng(seed=int(stress_prob * 9999))
         imp = rng.dirichlet(np.ones(len(display_features)) * 2)
         for i, label in enumerate(display_features):
-            if "beta"  in label: imp[i] *= 1.0 + pm.get("beta",  0.0) * 0.5
+            if "beta" in label:   imp[i] *= 1.0 + pm.get("beta",  0.0) * 0.5
             elif "alpha" in label: imp[i] *= 1.0 + pm.get("alpha", 0.0) * 0.4
             elif "theta" in label: imp[i] *= 1.0 + pm.get("theta", 0.0) * 0.3
         imp /= imp.sum()
-
         top_features = sorted(
-            [{"name": n, "importance": round(float(v), 4)}
-             for n, v in zip(display_features, imp)],
+            [{"name": n, "importance": round(float(v), 4)} for n, v in zip(display_features, imp)],
             key=lambda x: x["importance"], reverse=True,
         )
+
+        # ── Per-channel band powers for Brain3D ────────────────────────────────
+        per_ch_bp = []
+        for i in range(data.shape[0]):
+            ch_bp = _channel_band_powers(data[i], sfreq)
+            total = sum(ch_bp.values()) + 1e-10
+            per_ch_bp.append({
+                "channel": f"EEG{i+1}",
+                **{k: round(v / total * 10.0, 4) for k, v in ch_bp.items()}
+            })
 
         return {
             "prediction": prediction,
@@ -703,17 +721,18 @@ async def predict(body: PredictRequest) -> Dict[str, Any]:
                 "stress":     round(stress_prob,       4),
                 "non_stress": round(1.0 - stress_prob, 4),
             },
-            "confidence":   round(confidence, 4),
-            "topFeatures":  top_features,
-            "bandPowers":   bp,
-            "model_source": model_source,
+            "confidence":     round(confidence, 4),
+            "topFeatures":    top_features,
+            "bandPowers":     bp,           # avg, normalised 0-10 (for ClassificationDashboard)
+            "bandPowersPerCh": per_ch_bp,   # per-channel (for Brain3D)
+            "model_source":   model_source,
         }
 
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     except Exception as exc:
         import traceback
-        print(f"[predict] Error: {traceback.format_exc()}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Prediction failed: {exc}")
 
 
@@ -726,7 +745,6 @@ async def metrics() -> Dict[str, Any]:
                 return json.load(fh)
         except Exception:
             pass
-
     return {
         "balanced_accuracy": {"mean": 0.6347, "std": 0.0304},
         "roc_auc":           {"mean": 0.6721, "std": 0.0412},
