@@ -1,15 +1,16 @@
 """
-FastAPI backend — NeuroStress Control Room (v3.0)
+FastAPI backend — NeuroStress Control Room (v3.1 — FIXED)
 
-Fixes vs v2:
-  1. BUG FIX: classifier.py saves a dict {scaler, selector, voting}.
-     The old backend tried to call .predict_proba() on the dict itself → crash.
-     Now we unpack the dict and call voting.predict_proba() properly.
-  2. NEW ENDPOINT: /extract-features returns per-channel profiles, temporal
-     band evolution, feature groups summary, and band-power heatmap data
-     for the FeatureVisualizer frontend component.
-  3. Brain3D /predict now returns richer bandPowers per channel (not just average).
-  4. Feature extraction pipeline kept 100% aligned with features.py & classifier.py.
+Key fixes vs v3.0:
+  1. BUG FIX: classifier.py saves key "model" not "voting" — was causing
+     _VOTING to always be None → heuristic mode only.
+  2. BUG FIX: Signal scaling for feature extraction — EEG signals in volts
+     (order 1e-5 V) were producing near-zero Welch PSD. Now auto-scaled to
+     µV before frequency-domain computations (multiply by 1e6).
+  3. BUG FIX: _extract_features_for_prediction also scales signal to µV.
+  4. IMPROVED: _band_powers_avg returns non-zero values for volt-scale signals.
+  5. IMPROVED: Heuristic now works correctly with properly scaled band powers.
+  6. NEW: /health returns model_key_found so frontend can diagnose issues.
 """
 
 from __future__ import annotations
@@ -32,7 +33,7 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
-app = FastAPI(title="NeuroStress API", version="3.0.0")
+app = FastAPI(title="NeuroStress API", version="3.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -58,23 +59,24 @@ FEAT_NAMES_PATH = os.environ.get("NEUROSTRESS_FEAT_NAMES_PATH", _DEFAULT_FEAT_NA
 MAX_DISPLAY_SAMPLES: int = int(SFREQ * 30)
 
 # ── Global model cache ────────────────────────────────────────────────────────
-# classifier.py saves: {"scaler": ..., "selector": ..., "voting": ...}
-_SCALER   = None
-_SELECTOR = None
-_VOTING   = None   # ← the actual VotingClassifier
-_FEATURE_NAMES: List[str] = []
+_SCALER          = None
+_SELECTOR        = None
+_VOTING          = None   # ← the actual classifier (key: "model" in dict)
+_ALL_FEAT_NAMES: List[str] = []   # all feature names before selection
+_FEATURE_NAMES:  List[str] = []   # selected feature names
+_OPTIMAL_THRESHOLD: float  = 0.5
 
 
 @app.on_event("startup")
 async def load_model_on_startup():
-    global _SCALER, _SELECTOR, _VOTING, _FEATURE_NAMES
+    global _SCALER, _SELECTOR, _VOTING, _FEATURE_NAMES, _ALL_FEAT_NAMES, _OPTIMAL_THRESHOLD
 
-    # Load feature names
+    # Load selected feature names (post-selector)
     if os.path.exists(FEAT_NAMES_PATH):
         try:
             with open(FEAT_NAMES_PATH, "r") as fh:
                 _FEATURE_NAMES = json.load(fh)
-            print(f"[startup] Loaded {len(_FEATURE_NAMES)} feature names")
+            print(f"[startup] Loaded {len(_FEATURE_NAMES)} selected feature names")
         except Exception as e:
             print(f"[startup] Could not load feature names: {e}")
 
@@ -85,26 +87,63 @@ async def load_model_on_startup():
             payload = joblib.load(MODEL_PATH)
 
             if isinstance(payload, dict):
-                # ✅ New format from classifier.py: {scaler, selector, voting}
                 _SCALER   = payload.get("scaler")
                 _SELECTOR = payload.get("selector")
-                _VOTING   = payload.get("voting")
-                print(f"[startup] Model dict loaded: "
-                      f"scaler={_SCALER is not None}, "
-                      f"selector={_SELECTOR is not None}, "
-                      f"voting={_VOTING is not None}")
+
+                # ✅ FIX: classifier.py uses key "model", NOT "voting"
+                _VOTING = payload.get("model") or payload.get("voting")
+
+                # Also grab all_feature_names if stored in dict
+                _ALL_FEAT_NAMES = payload.get("all_feature_names", [])
+
+                # Grab optimal threshold if stored
+                _OPTIMAL_THRESHOLD = float(payload.get("threshold", 0.5))
+
+                print(f"[startup] Model dict loaded:")
+                print(f"  scaler   = {_SCALER is not None}")
+                print(f"  selector = {_SELECTOR is not None}")
+                print(f"  model    = {_VOTING is not None}  ← key 'model'")
+                print(f"  threshold = {_OPTIMAL_THRESHOLD:.3f}")
+                print(f"  all_feature_names count = {len(_ALL_FEAT_NAMES)}")
+
                 if _VOTING is not None:
                     n = getattr(_VOTING, "n_features_in_", "?")
-                    print(f"[startup] VotingClassifier expects {n} features")
+                    print(f"[startup] Classifier expects {n} features")
+                else:
+                    print("[startup] WARNING: 'model' key not found in dict.")
+                    print(f"  Available keys: {list(payload.keys())}")
             else:
-                # ⚠ Old format: direct estimator saved without wrapper
+                # Legacy: direct estimator
                 _VOTING = payload
                 print(f"[startup] Model loaded (legacy format) — "
                       f"features in: {getattr(payload,'n_features_in_','?')}")
         except Exception as e:
             print(f"[startup] Could not load model: {e}")
+            import traceback
+            traceback.print_exc()
     else:
         print(f"[startup] Model not found at {MODEL_PATH} — heuristic mode")
+
+
+# ── Signal scaling helper ─────────────────────────────────────────────────────
+
+def _ensure_microvolts(data: np.ndarray) -> np.ndarray:
+    """
+    EEG signals are stored in volts (1e-5 to 1e-4 V range after preprocessing).
+    Welch PSD computations need µV scale to return meaningful band power values.
+    Detects scale and converts to µV automatically.
+    """
+    max_abs = np.max(np.abs(data))
+    if max_abs == 0:
+        return data
+    if max_abs < 0.01:
+        # Signal is in volts → convert to µV
+        return data * 1e6
+    if max_abs < 10:
+        # Signal might be in mV → convert to µV
+        return data * 1e3
+    # Already in µV range (or counts)
+    return data
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -128,6 +167,7 @@ def _load_mat_eeg(file_bytes: bytes) -> np.ndarray:
 
 
 def _auto_scale(data: np.ndarray) -> np.ndarray:
+    """Scale raw .mat data to volts for preprocessing."""
     mx = np.max(np.abs(data))
     if mx > 1000.0:
         return data * 1e-6
@@ -183,10 +223,11 @@ def _preprocess_scipy(data: np.ndarray, sfreq: float) -> tuple[np.ndarray, List[
 
 
 def _channel_band_powers(signal_1d: np.ndarray, sfreq: float) -> Dict[str, float]:
-    """Band powers for a single channel signal."""
+    """Band powers for a single channel signal. Input should be in µV."""
     from scipy import signal as sp
-    nperseg = min(int(sfreq * 2), len(signal_1d))
-    freqs, psd = sp.welch(signal_1d, fs=sfreq, nperseg=nperseg)
+    s = _ensure_microvolts(signal_1d)
+    nperseg = min(int(sfreq * 2), len(s))
+    freqs, psd = sp.welch(s, fs=sfreq, nperseg=nperseg)
     result = {}
     for i, name in enumerate(BAND_NAMES):
         mask = (freqs >= BAND_EDGES[i]) & (freqs < BAND_EDGES[i + 1])
@@ -196,7 +237,9 @@ def _channel_band_powers(signal_1d: np.ndarray, sfreq: float) -> Dict[str, float
 
 def _band_powers_avg(data: np.ndarray, sfreq: float) -> List[Dict[str, float]]:
     """Average band power across channels, normalised to 0-10."""
-    mean_sig = data.mean(axis=0)
+    # Scale to µV before computation
+    data_uv = _ensure_microvolts(data)
+    mean_sig = data_uv.mean(axis=0)
     bp = _channel_band_powers(mean_sig, sfreq)
     total = sum(bp.values()) + 1e-10
     return [{name: round(v / total * 10.0, 4)} for name, v in bp.items()]
@@ -215,18 +258,20 @@ def _hjorth(signal_1d: np.ndarray):
 
 def _spectral_entropy(signal_1d: np.ndarray, sfreq: float) -> float:
     from scipy import signal as sp
-    freqs, psd = sp.welch(signal_1d, fs=sfreq)
+    s = _ensure_microvolts(signal_1d)
+    freqs, psd = sp.welch(s, fs=sfreq)
     psd_n = psd / (np.sum(psd) + 1e-10)
     return float(-np.sum(psd_n * np.log(psd_n + 1e-10)))
 
 
 def _compute_channel_profiles(data: np.ndarray, sfreq: float,
                                ch_names: List[str]) -> List[Dict]:
-    """Compute per-channel feature profile for the FeatureVisualizer."""
+    """Compute per-channel feature profile. Signal auto-scaled to µV."""
+    data_uv = _ensure_microvolts(data)
     profiles = []
     for i, ch in enumerate(ch_names):
-        s = data[i]
-        bp = _channel_band_powers(s, sfreq)
+        s = data_uv[i]
+        bp = _channel_band_powers(s, sfreq)  # already µV
         alpha = bp["alpha"] + 1e-10
         activity, mobility, complexity = _hjorth(s)
         ent = _spectral_entropy(s, sfreq)
@@ -248,14 +293,15 @@ def _temporal_band_evolution(data: np.ndarray, sfreq: float,
                               overlap: float = 0.5) -> List[Dict]:
     """Band power evolution across Hanning windows (mean across channels)."""
     from scipy import signal as sp
+    data_uv = _ensure_microvolts(data)
     win_len = int(window_sec * sfreq)
     step = int(win_len * (1 - overlap))
     hann = np.hanning(win_len)
-    n_samp = data.shape[1]
+    n_samp = data_uv.shape[1]
     windows = []
     pos = 0
     while pos + win_len <= n_samp:
-        seg = data[:, pos: pos + win_len] * hann
+        seg = data_uv[:, pos: pos + win_len] * hann
         windows.append(seg)
         pos += step
 
@@ -268,7 +314,7 @@ def _temporal_band_evolution(data: np.ndarray, sfreq: float,
             mask = (freqs >= BAND_EDGES[j]) & (freqs < BAND_EDGES[j + 1])
             bp[name] = float(np.trapz(psd[mask], freqs[mask])) if mask.any() else 0.0
         delta = bp["delta"] + bp["theta"] + bp["alpha"] + 1e-10
-        arousal = round((bp["beta"] + bp["gamma"]) / delta, 4)
+        arousal = round((bp["beta"] + bp.get("gamma", 0.0)) / delta, 4)
         evolution.append({
             "window": wi + 1,
             **{k: round(v, 6) for k, v in bp.items()},
@@ -283,11 +329,11 @@ def _build_feature_groups(data: np.ndarray, sfreq: float,
     from scipy import signal as sp
     from scipy import stats as sc_stats
 
-    # Aggregate per group (mean of absolute values across channels)
+    data_uv = _ensure_microvolts(data)
     time_feats, freq_feats, hjorth_feats, frac_feats, ent_feats = {}, {}, {}, {}, {}
 
-    for i, ch in enumerate(ch_names[:8]):  # cap at 8 channels for speed
-        s = data[i]
+    for i, ch in enumerate(ch_names[:8]):
+        s = data_uv[i]
         # Time
         time_feats[f"{ch}_variance"] = float(np.var(s))
         time_feats[f"{ch}_rms"] = float(np.sqrt(np.mean(s ** 2)))
@@ -303,7 +349,7 @@ def _build_feature_groups(data: np.ndarray, sfreq: float,
         hjorth_feats[f"{ch}_activity"] = act
         hjorth_feats[f"{ch}_mobility"] = mob
         hjorth_feats[f"{ch}_complexity"] = comp
-        # Fractal — simplified Katz FD
+        # Fractal — Katz FD
         N = len(s)
         if N > 1:
             L_sum = float(np.sum(np.sqrt(1 + np.diff(s) ** 2)))
@@ -330,10 +376,17 @@ def _build_feature_groups(data: np.ndarray, sfreq: float,
 # ── Feature extraction aligned with training ──────────────────────────────────
 def _extract_features_for_prediction(data: np.ndarray, sfreq: float,
                                       feature_names: List[str]) -> np.ndarray:
+    """
+    Extract features matching the training pipeline.
+    CRITICAL: Scale to µV before any frequency-domain computation.
+    """
     from scipy import signal as sp
     from scipy import stats as sc_stats
 
-    n_ch, n_samp = data.shape
+    # ✅ FIX: Scale to µV before feature extraction
+    data_uv = _ensure_microvolts(data)
+
+    n_ch, n_samp = data_uv.shape
     win_len = int(sfreq)
     step = win_len // 2
     hann = np.hanning(win_len)
@@ -341,23 +394,23 @@ def _extract_features_for_prediction(data: np.ndarray, sfreq: float,
     windows = []
     pos = 0
     while pos + win_len <= n_samp:
-        seg = data[:, pos: pos + win_len] * hann
+        seg = data_uv[:, pos: pos + win_len] * hann
         windows.append(seg)
         pos += step
     if not windows:
         seg = np.zeros((n_ch, win_len))
-        seg[:, :n_samp] = data
+        seg[:, :n_samp] = data_uv
         seg *= hann
         windows = [seg]
 
     all_window_feats = []
     per_ch_names = (
-        ["variance", "rms", "ptp", "skewness", "kurtosis"]  # 5 time
-        + [f"{b}_power" for b in BAND_NAMES]                 # 5 freq
-        + ["hj_activity", "hj_mobility", "hj_complexity"]    # 3 hjorth
-        + ["higuchi_fd", "katz_fd"]                           # 2 fractal
+        ["variance", "rms", "ptp", "skewness", "kurtosis"]        # 5 time
+        + [f"{b}_power" for b in BAND_NAMES]                       # 5 freq
+        + ["hj_activity", "hj_mobility", "hj_complexity"]          # 3 hjorth
+        + ["higuchi_fd", "katz_fd"]                                 # 2 fractal
         + ["approx_entropy", "sample_entropy",
-           "spectral_entropy", "svd_entropy"]                 # 4 entropy
+           "spectral_entropy", "svd_entropy"]                       # 4 entropy
     )
 
     for seg in windows:
@@ -394,8 +447,7 @@ def _extract_features_for_prediction(data: np.ndarray, sfreq: float,
                 for m in range(k):
                     indices = np.arange(m, N, k, dtype=int)
                     if len(indices) > 1:
-                        Lkm = np.sum(np.abs(np.diff(s[indices])))
-                        Lk += Lkm * (N - 1) / (len(indices) * k)
+                        Lk += np.sum(np.abs(np.diff(s[indices]))) * (N - 1) / (len(indices) * k)
                 if k > 0:
                     L_vals.append(np.log(Lk / k + 1e-10))
             if len(L_vals) > 1:
@@ -476,9 +528,11 @@ def _extract_features_for_prediction(data: np.ndarray, sfreq: float,
 
 
 def _stress_heuristic(bp_list: List[Dict[str, float]]) -> tuple[float, float]:
+    """Heuristic stress estimation from band powers (expects µV² scale values)."""
     pm: Dict[str, float] = {}
     for d in bp_list:
         pm.update(d)
+    # bp_list values are already normalised to 0-10 scale
     delta = pm.get("delta", 1.0) + 1e-10
     theta = pm.get("theta", 1.0) + 1e-10
     alpha = pm.get("alpha", 1.0) + 1e-10
@@ -506,9 +560,14 @@ async def health() -> Dict[str, Any]:
     return {
         "status": "ok",
         "model_available": model_ready,
-        "model_format": "dict(scaler+selector+voting)" if _SCALER is not None else "legacy",
+        "model_source": "trained_model" if model_ready else "heuristic",
+        "scaler_loaded": _SCALER is not None,
+        "selector_loaded": _SELECTOR is not None,
         "feature_names_count": len(_FEATURE_NAMES),
+        "all_feature_names_count": len(_ALL_FEAT_NAMES),
+        "optimal_threshold": _OPTIMAL_THRESHOLD,
         "model_path": MODEL_PATH,
+        "model_path_exists": os.path.exists(MODEL_PATH),
     }
 
 
@@ -551,7 +610,7 @@ async def preprocess(file: UploadFile = File(...)) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"Preprocessing failed: {exc}")
 
 
-# ── /extract-features (NEW) ───────────────────────────────────────────────────
+# ── /extract-features ─────────────────────────────────────────────────────────
 class ExtractRequest(BaseModel):
     signal: List[List[float]]
     sfreq:  float = SFREQ
@@ -559,10 +618,6 @@ class ExtractRequest(BaseModel):
 
 @app.post("/extract-features")
 async def extract_features_endpoint(body: ExtractRequest) -> Dict[str, Any]:
-    """
-    Return rich feature data for the FeatureVisualizer frontend component.
-    All computations are per-channel; results are grouped by feature type.
-    """
     try:
         data = np.array(body.signal, dtype=float)
         if data.ndim != 2:
@@ -577,23 +632,21 @@ async def extract_features_endpoint(body: ExtractRequest) -> Dict[str, Any]:
         step    = win_len // 2
         n_windows = max((n_samp - win_len) // step + 1, 1)
 
-        # 1. Per-channel profiles (Hjorth, ratios, entropy)
+        # 1. Per-channel profiles (auto-scales to µV internally)
         profiles = _compute_channel_profiles(data, sfreq, ch_names)
 
-        # 2. Temporal evolution of band powers
+        # 2. Temporal evolution
         temporal = _temporal_band_evolution(data, sfreq, window_sec=1.0, overlap=0.5)
 
         # 3. Feature group summaries
         groups = _build_feature_groups(data, sfreq, ch_names)
 
-        # 4. Band powers per channel (for heatmap)
+        # 4. Band powers per channel (auto-scales to µV internally)
         band_powers_per_ch = [
             _channel_band_powers(data[i], sfreq)
             for i in range(n_ch)
         ]
 
-        # Total feature count estimate (matches features.py per-channel * n_ch)
-        # 5 time + 5 freq + 3 hjorth + 2 fractal + 4 entropy = 19 per channel
         total_features = 19 * n_ch
 
         return {
@@ -630,37 +683,30 @@ async def predict(body: PredictRequest) -> Dict[str, Any]:
             raise ValueError("signal must be 2-D [channels x samples]")
 
         sfreq = body.sfreq
-        bp    = _band_powers_avg(data, sfreq)
+        # Band powers for display (scales to µV internally)
+        bp = _band_powers_avg(data, sfreq)
 
         prediction   = 0
         stress_prob  = 0.5
         confidence   = 0.5
         model_source = "heuristic"
 
-        # ── Try trained model (dict format) ───────────────────────────────────
-        if _VOTING is not None and _FEATURE_NAMES:
+        # ── Try trained model ─────────────────────────────────────────────────
+        if _VOTING is not None:
             try:
-                mf = _extract_features_for_prediction(data, sfreq, _FEATURE_NAMES)
-                print(f"[predict] Raw feature shape: {mf.shape}")
-
-                # Apply scaler if available (new format)
-                if _SCALER is not None:
-                    # selector already selected the right columns — but if scaler
-                    # was fit on ALL features before selection, we need the full
-                    # feature vector first.  Here we re-extract without selection
-                    # to apply scaler, then apply selector.
-                    mf_full = _extract_features_for_prediction(data, sfreq, [])
+                if _SCALER is not None and _SELECTOR is not None:
+                    # New pipeline: extract full features → scale → select → predict
+                    # Use all_feature_names for ordering if available
+                    feat_names_for_extract = _ALL_FEAT_NAMES if _ALL_FEAT_NAMES else []
+                    mf_full = _extract_features_for_prediction(data, sfreq, feat_names_for_extract)
                     print(f"[predict] Full feature shape: {mf_full.shape}")
-                    try:
-                        mf_scaled = _SCALER.transform(mf_full)
-                        mf_sel = _SELECTOR.transform(mf_scaled)
-                        print(f"[predict] After scaler+selector: {mf_sel.shape}")
-                    except Exception as e:
-                        print(f"[predict] Scaler/selector failed ({e}), using raw mf")
-                        mf_sel = mf
+
+                    mf_scaled = _SCALER.transform(mf_full)
+                    mf_sel    = _SELECTOR.transform(mf_scaled)
+                    print(f"[predict] After scaler+selector: {mf_sel.shape}")
                 else:
-                    # Legacy format: model expects features directly
-                    mf_sel = mf
+                    # Legacy: extract selected features directly
+                    mf_sel = _extract_features_for_prediction(data, sfreq, _FEATURE_NAMES)
                     expected = getattr(_VOTING, "n_features_in_", None)
                     if expected and mf_sel.shape[1] != expected:
                         if mf_sel.shape[1] > expected:
@@ -668,18 +714,22 @@ async def predict(body: PredictRequest) -> Dict[str, Any]:
                         else:
                             pad = np.zeros((1, expected - mf_sel.shape[1]))
                             mf_sel = np.hstack([mf_sel, pad])
+                    print(f"[predict] Legacy feature shape: {mf_sel.shape}")
 
                 proba       = _VOTING.predict_proba(mf_sel)[0]
-                prediction  = int(_VOTING.predict(mf_sel)[0])
                 stress_prob = float(proba[1]) if len(proba) > 1 else float(proba[0])
+                # Use optimal threshold from training
+                prediction  = int(stress_prob >= _OPTIMAL_THRESHOLD)
                 confidence  = float(max(proba))
                 model_source = "trained_model"
-                print(f"[predict] label={prediction} stress={stress_prob:.3f} conf={confidence:.3f}")
+                print(f"[predict] label={prediction} stress={stress_prob:.3f} "
+                      f"conf={confidence:.3f} threshold={_OPTIMAL_THRESHOLD:.3f}")
 
             except Exception as exc:
                 import traceback
                 print(f"[predict] Model inference failed: {exc}")
                 traceback.print_exc()
+                # Fall through to heuristic
 
         if model_source == "heuristic":
             stress_prob, confidence = _stress_heuristic(bp)
@@ -701,14 +751,16 @@ async def predict(body: PredictRequest) -> Dict[str, Any]:
             elif "theta" in label: imp[i] *= 1.0 + pm.get("theta", 0.0) * 0.3
         imp /= imp.sum()
         top_features = sorted(
-            [{"name": n, "importance": round(float(v), 4)} for n, v in zip(display_features, imp)],
+            [{"name": n, "importance": round(float(v), 4)}
+             for n, v in zip(display_features, imp)],
             key=lambda x: x["importance"], reverse=True,
         )
 
         # ── Per-channel band powers for Brain3D ────────────────────────────────
+        data_uv = _ensure_microvolts(data)
         per_ch_bp = []
         for i in range(data.shape[0]):
-            ch_bp = _channel_band_powers(data[i], sfreq)
+            ch_bp = _channel_band_powers(data_uv[i], sfreq)
             total = sum(ch_bp.values()) + 1e-10
             per_ch_bp.append({
                 "channel": f"EEG{i+1}",
@@ -723,8 +775,8 @@ async def predict(body: PredictRequest) -> Dict[str, Any]:
             },
             "confidence":     round(confidence, 4),
             "topFeatures":    top_features,
-            "bandPowers":     bp,           # avg, normalised 0-10 (for ClassificationDashboard)
-            "bandPowersPerCh": per_ch_bp,   # per-channel (for Brain3D)
+            "bandPowers":     bp,
+            "bandPowersPerCh": per_ch_bp,
             "model_source":   model_source,
         }
 
