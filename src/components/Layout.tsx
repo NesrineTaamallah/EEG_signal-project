@@ -1,5 +1,8 @@
 import React from "react";
-import { Brain, Activity, BarChart3, Zap, Layers, MessageSquare, ArrowLeftRight } from "lucide-react";
+import {
+  Brain, Activity, BarChart3, Zap, Layers,
+  MessageSquare, ArrowLeftRight, Cpu
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface LayoutProps {
@@ -10,13 +13,14 @@ interface LayoutProps {
 
 const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) => {
   const menuItems = [
-    { id: "dashboard", label: "Dashboard", icon: BarChart3 },
-    { id: "signal", label: "Signal Analyzer", icon: Activity },
-    { id: "compare", label: "Compare", icon: ArrowLeftRight },
-    { id: "classify", label: "Classification", icon: Zap },
-    { id: "brain", label: "3D Brain Map", icon: Brain },
-    { id: "assistant", label: "Neuro-Assistant", icon: MessageSquare },
-    { id: "pipeline", label: "Pipeline", icon: Layers },
+    { id: "dashboard",  label: "Dashboard",        icon: BarChart3 },
+    { id: "signal",     label: "Signal Analyzer",  icon: Activity },
+    { id: "compare",    label: "Compare",           icon: ArrowLeftRight },
+    { id: "features",   label: "Feature Explorer",  icon: Cpu },
+    { id: "classify",   label: "Classification",    icon: Zap },
+    { id: "brain",      label: "3D Brain Map",      icon: Brain },
+    { id: "assistant",  label: "Neuro-Assistant",   icon: MessageSquare },
+    { id: "pipeline",   label: "Pipeline",          icon: Layers },
   ];
 
   return (
@@ -27,31 +31,35 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
           <div className="p-2 bg-accent-violet rounded-lg">
             <Brain className="w-6 h-6 text-white" />
           </div>
-          <h1 className="font-bold text-lg tracking-tight">NEURO<span className="text-accent-teal">CTRL</span></h1>
+          <h1 className="font-bold text-lg tracking-tight">
+            NEURO<span className="text-accent-teal">CTRL</span>
+          </h1>
         </div>
-        
-        <nav className="flex-1 p-4 space-y-2">
+
+        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
           {menuItems.map((item) => (
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
               className={cn(
-                "w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200",
-                activeTab === item.id 
-                  ? "bg-accent-violet/10 text-accent-violet border border-accent-violet/20" 
+                "w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 text-sm",
+                activeTab === item.id
+                  ? "bg-accent-violet/10 text-accent-violet border border-accent-violet/20"
                   : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
               )}
             >
-              <item.icon className="w-5 h-5" />
+              <item.icon className="w-4 h-4 shrink-0" />
               <span className="font-medium">{item.label}</span>
             </button>
           ))}
         </nav>
-        
+
         <div className="p-4 border-t border-slate-800">
           <div className="p-4 bg-slate-800/50 rounded-lg">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-slate-500 font-medium uppercase tracking-wider">System Status</span>
+              <span className="text-xs text-slate-500 font-medium uppercase tracking-wider">
+                System Status
+              </span>
               <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
             </div>
             <div className="text-sm font-mono text-accent-teal">ONLINE</div>
@@ -60,9 +68,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto p-8">
-        {children}
-      </main>
+      <main className="flex-1 overflow-y-auto p-8">{children}</main>
     </div>
   );
 };

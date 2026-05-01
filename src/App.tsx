@@ -13,6 +13,7 @@ import Brain3D from "./components/Brain3D";
 import PipelineStepper from "./components/PipelineStepper";
 import NeuroAssistant from "./components/NeuroAssistant";
 import ComparativeAnalysis from "./components/ComparativeAnalysis";
+import FeatureVisualizer from "./components/FeatureVisualizer";
 import { motion, AnimatePresence } from "motion/react";
 
 const queryClient = new QueryClient({
@@ -29,22 +30,15 @@ export default function App() {
 
   const renderContent = () => {
     switch (activeTab) {
-      case "dashboard":
-        return <Dashboard />;
-      case "signal":
-        return <SignalAnalyzer />;
-      case "compare":
-        return <ComparativeAnalysis />;
-      case "classify":
-        return <ClassificationDashboard />;
-      case "brain":
-        return <Brain3D />;
-      case "pipeline":
-        return <PipelineStepper />;
-      case "assistant":
-        return <NeuroAssistant />;
-      default:
-        return <Dashboard />;
+      case "dashboard":  return <Dashboard />;
+      case "signal":     return <SignalAnalyzer />;
+      case "compare":    return <ComparativeAnalysis />;
+      case "features":   return <FeatureVisualizer />;
+      case "classify":   return <ClassificationDashboard />;
+      case "brain":      return <Brain3D />;
+      case "pipeline":   return <PipelineStepper />;
+      case "assistant":  return <NeuroAssistant />;
+      default:           return <Dashboard />;
     }
   };
 
@@ -67,4 +61,3 @@ export default function App() {
     </QueryClientProvider>
   );
 }
-
