@@ -1,16 +1,18 @@
 """
-FastAPI backend — NeuroStress Control Room (v3.1 — FIXED)
+FastAPI backend — NeuroStress Control Room (v3.2 — FIXED)
 
-Key fixes vs v3.0:
-  1. BUG FIX: classifier.py saves key "model" not "voting" — was causing
-     _VOTING to always be None → heuristic mode only.
-  2. BUG FIX: Signal scaling for feature extraction — EEG signals in volts
-     (order 1e-5 V) were producing near-zero Welch PSD. Now auto-scaled to
-     µV before frequency-domain computations (multiply by 1e6).
-  3. BUG FIX: _extract_features_for_prediction also scales signal to µV.
-  4. IMPROVED: _band_powers_avg returns non-zero values for volt-scale signals.
-  5. IMPROVED: Heuristic now works correctly with properly scaled band powers.
-  6. NEW: /health returns model_key_found so frontend can diagnose issues.
+Key fixes vs v3.1:
+  1. BUG FIX (CRITICAL): _band_powers_avg used mean(axis=0) across channels.
+     After average-reference preprocessing, sum of all channels = 0, so the
+     mean signal = 0 → Welch PSD = 0 → all band powers = 0.00 in UI.
+     Fix: compute PSD per channel, then average the PSDs.
+  2. BUG FIX: _temporal_band_evolution same mean(axis=0) bug — fixed same way.
+  3. BUG FIX: _build_feature_groups same bug — fixed.
+  4. BUG FIX: /extract-features returned raw µV² band_powers_per_ch but
+     /predict returned normalized 0-10 values. Now both normalize to 0-10.
+  5. IMPROVED: _channel_band_powers now normalises output to 0-10 for
+     display consistency.  Raw µV² values are available via _channel_band_powers_raw.
+  6. IMPROVED: per_ch_bp in /predict now properly normalised per channel.
 """
 
 from __future__ import annotations
@@ -33,7 +35,7 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
-app = FastAPI(title="NeuroStress API", version="3.1.0")
+app = FastAPI(title="NeuroStress API", version="3.2.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -61,9 +63,9 @@ MAX_DISPLAY_SAMPLES: int = int(SFREQ * 30)
 # ── Global model cache ────────────────────────────────────────────────────────
 _SCALER          = None
 _SELECTOR        = None
-_VOTING          = None   # ← the actual classifier (key: "model" in dict)
-_ALL_FEAT_NAMES: List[str] = []   # all feature names before selection
-_FEATURE_NAMES:  List[str] = []   # selected feature names
+_VOTING          = None
+_ALL_FEAT_NAMES: List[str] = []
+_FEATURE_NAMES:  List[str] = []
 _OPTIMAL_THRESHOLD: float  = 0.5
 
 
@@ -71,7 +73,6 @@ _OPTIMAL_THRESHOLD: float  = 0.5
 async def load_model_on_startup():
     global _SCALER, _SELECTOR, _VOTING, _FEATURE_NAMES, _ALL_FEAT_NAMES, _OPTIMAL_THRESHOLD
 
-    # Load selected feature names (post-selector)
     if os.path.exists(FEAT_NAMES_PATH):
         try:
             with open(FEAT_NAMES_PATH, "r") as fh:
@@ -80,7 +81,6 @@ async def load_model_on_startup():
         except Exception as e:
             print(f"[startup] Could not load feature names: {e}")
 
-    # Load model — handle both old (direct estimator) and new (dict) formats
     if os.path.exists(MODEL_PATH):
         try:
             import joblib
@@ -89,20 +89,14 @@ async def load_model_on_startup():
             if isinstance(payload, dict):
                 _SCALER   = payload.get("scaler")
                 _SELECTOR = payload.get("selector")
-
-                # ✅ FIX: classifier.py uses key "model", NOT "voting"
-                _VOTING = payload.get("model") or payload.get("voting")
-
-                # Also grab all_feature_names if stored in dict
+                _VOTING   = payload.get("model") or payload.get("voting")
                 _ALL_FEAT_NAMES = payload.get("all_feature_names", [])
-
-                # Grab optimal threshold if stored
                 _OPTIMAL_THRESHOLD = float(payload.get("threshold", 0.5))
 
                 print(f"[startup] Model dict loaded:")
                 print(f"  scaler   = {_SCALER is not None}")
                 print(f"  selector = {_SELECTOR is not None}")
-                print(f"  model    = {_VOTING is not None}  ← key 'model'")
+                print(f"  model    = {_VOTING is not None}")
                 print(f"  threshold = {_OPTIMAL_THRESHOLD:.3f}")
                 print(f"  all_feature_names count = {len(_ALL_FEAT_NAMES)}")
 
@@ -113,7 +107,6 @@ async def load_model_on_startup():
                     print("[startup] WARNING: 'model' key not found in dict.")
                     print(f"  Available keys: {list(payload.keys())}")
             else:
-                # Legacy: direct estimator
                 _VOTING = payload
                 print(f"[startup] Model loaded (legacy format) — "
                       f"features in: {getattr(payload,'n_features_in_','?')}")
@@ -129,9 +122,9 @@ async def load_model_on_startup():
 
 def _ensure_microvolts(data: np.ndarray) -> np.ndarray:
     """
-    EEG signals are stored in volts (1e-5 to 1e-4 V range after preprocessing).
+    Convert EEG signal to µV scale.
+    After average-reference preprocessing, signals are in volts (~1e-5 to 1e-4 V).
     Welch PSD computations need µV scale to return meaningful band power values.
-    Detects scale and converts to µV automatically.
     """
     max_abs = np.max(np.abs(data))
     if max_abs == 0:
@@ -222,11 +215,17 @@ def _preprocess_scipy(data: np.ndarray, sfreq: float) -> tuple[np.ndarray, List[
     return data_out, [f"EEG{i + 1}" for i in range(data.shape[0])]
 
 
-def _channel_band_powers(signal_1d: np.ndarray, sfreq: float) -> Dict[str, float]:
-    """Band powers for a single channel signal. Input should be in µV."""
+def _channel_band_powers_raw(signal_1d: np.ndarray, sfreq: float) -> Dict[str, float]:
+    """
+    Band powers (in µV²/Hz) for a single channel.
+    Scales input to µV before computation.
+    Returns RAW absolute values.
+    """
     from scipy import signal as sp
     s = _ensure_microvolts(signal_1d)
     nperseg = min(int(sfreq * 2), len(s))
+    if nperseg < 4:
+        return {name: 0.0 for name in BAND_NAMES}
     freqs, psd = sp.welch(s, fs=sfreq, nperseg=nperseg)
     result = {}
     for i, name in enumerate(BAND_NAMES):
@@ -235,12 +234,49 @@ def _channel_band_powers(signal_1d: np.ndarray, sfreq: float) -> Dict[str, float
     return result
 
 
+def _channel_band_powers(signal_1d: np.ndarray, sfreq: float) -> Dict[str, float]:
+    """
+    Band powers normalised to 0-10 scale for display.
+    """
+    raw = _channel_band_powers_raw(signal_1d, sfreq)
+    total = sum(raw.values()) + 1e-10
+    return {name: round(v / total * 10.0, 4) for name, v in raw.items()}
+
+
 def _band_powers_avg(data: np.ndarray, sfreq: float) -> List[Dict[str, float]]:
-    """Average band power across channels, normalised to 0-10."""
-    # Scale to µV before computation
+    """
+    Average band power across all channels, normalised to 0-10.
+    
+    FIX (v3.2): Previously computed mean(axis=0) signal then ran Welch on it.
+    After average-reference preprocessing, the sum (and mean) across channels = 0,
+    so the mean signal is ~0 → Welch PSD ≈ 0 → all band powers = 0.
+    
+    Fix: compute PSD per channel, average the PSDs, then compute band powers.
+    """
+    from scipy import signal as sp
+
     data_uv = _ensure_microvolts(data)
-    mean_sig = data_uv.mean(axis=0)
-    bp = _channel_band_powers(mean_sig, sfreq)
+    n_ch = data_uv.shape[0]
+    nperseg = min(int(sfreq * 2), data_uv.shape[1])
+    if nperseg < 4:
+        return [{name: 0.0} for name in BAND_NAMES]
+
+    # Compute PSD per channel and average — avoids cancellation from re-referencing
+    all_psds = []
+    freqs = None
+    for ch in range(n_ch):
+        f, psd = sp.welch(data_uv[ch], fs=sfreq, nperseg=nperseg)
+        all_psds.append(psd)
+        if freqs is None:
+            freqs = f
+
+    avg_psd = np.mean(all_psds, axis=0)
+
+    bp = {}
+    for i, name in enumerate(BAND_NAMES):
+        mask = (freqs >= BAND_EDGES[i]) & (freqs < BAND_EDGES[i + 1])
+        bp[name] = float(np.trapz(avg_psd[mask], freqs[mask])) if mask.any() else 0.0
+
     total = sum(bp.values()) + 1e-10
     return [{name: round(v / total * 10.0, 4)} for name, v in bp.items()]
 
@@ -259,19 +295,22 @@ def _hjorth(signal_1d: np.ndarray):
 def _spectral_entropy(signal_1d: np.ndarray, sfreq: float) -> float:
     from scipy import signal as sp
     s = _ensure_microvolts(signal_1d)
-    freqs, psd = sp.welch(s, fs=sfreq)
+    nperseg = min(int(sfreq * 2), len(s))
+    if nperseg < 4:
+        return 0.0
+    freqs, psd = sp.welch(s, fs=sfreq, nperseg=nperseg)
     psd_n = psd / (np.sum(psd) + 1e-10)
     return float(-np.sum(psd_n * np.log(psd_n + 1e-10)))
 
 
 def _compute_channel_profiles(data: np.ndarray, sfreq: float,
                                ch_names: List[str]) -> List[Dict]:
-    """Compute per-channel feature profile. Signal auto-scaled to µV."""
+    """Compute per-channel feature profile. Uses normalised (0-10) band powers."""
     data_uv = _ensure_microvolts(data)
     profiles = []
     for i, ch in enumerate(ch_names):
         s = data_uv[i]
-        bp = _channel_band_powers(s, sfreq)  # already µV
+        bp = _channel_band_powers(s, sfreq)  # normalised 0-10
         alpha = bp["alpha"] + 1e-10
         activity, mobility, complexity = _hjorth(s)
         ent = _spectral_entropy(s, sfreq)
@@ -291,30 +330,51 @@ def _compute_channel_profiles(data: np.ndarray, sfreq: float,
 def _temporal_band_evolution(data: np.ndarray, sfreq: float,
                               window_sec: float = 1.0,
                               overlap: float = 0.5) -> List[Dict]:
-    """Band power evolution across Hanning windows (mean across channels)."""
+    """
+    Band power evolution across Hanning windows.
+    
+    FIX (v3.2): Previously used mean(axis=0) across channels which = 0 for
+    average-referenced EEG. Now computes PSD per channel and averages PSDs.
+    """
     from scipy import signal as sp
+
     data_uv = _ensure_microvolts(data)
     win_len = int(window_sec * sfreq)
     step = int(win_len * (1 - overlap))
     hann = np.hanning(win_len)
-    n_samp = data_uv.shape[1]
-    windows = []
+    n_ch, n_samp = data_uv.shape
+    nperseg = min(256, win_len)
+
+    windows_segs = []
     pos = 0
     while pos + win_len <= n_samp:
-        seg = data_uv[:, pos: pos + win_len] * hann
-        windows.append(seg)
+        seg = data_uv[:, pos: pos + win_len] * hann  # (n_ch, win_len)
+        windows_segs.append(seg)
         pos += step
 
+    if not windows_segs:
+        return []
+
     evolution = []
-    for wi, seg in enumerate(windows):
-        mean_sig = seg.mean(axis=0)
-        freqs, psd = sp.welch(mean_sig, fs=sfreq, nperseg=min(256, win_len))
+    for wi, seg in enumerate(windows_segs):
+        # Average PSD across channels (not average of time signals!)
+        all_psds = []
+        freqs = None
+        for ch in range(n_ch):
+            f, psd = sp.welch(seg[ch], fs=sfreq, nperseg=nperseg)
+            all_psds.append(psd)
+            if freqs is None:
+                freqs = f
+
+        avg_psd = np.mean(all_psds, axis=0)
+
         bp = {}
         for j, name in enumerate(BAND_NAMES):
             mask = (freqs >= BAND_EDGES[j]) & (freqs < BAND_EDGES[j + 1])
-            bp[name] = float(np.trapz(psd[mask], freqs[mask])) if mask.any() else 0.0
-        delta = bp["delta"] + bp["theta"] + bp["alpha"] + 1e-10
-        arousal = round((bp["beta"] + bp.get("gamma", 0.0)) / delta, 4)
+            bp[name] = float(np.trapz(avg_psd[mask], freqs[mask])) if mask.any() else 0.0
+
+        delta_denom = bp["delta"] + bp["theta"] + bp["alpha"] + 1e-10
+        arousal = round((bp["beta"] + bp.get("gamma", 0.0)) / delta_denom, 4)
         evolution.append({
             "window": wi + 1,
             **{k: round(v, 6) for k, v in bp.items()},
@@ -325,7 +385,12 @@ def _temporal_band_evolution(data: np.ndarray, sfreq: float,
 
 def _build_feature_groups(data: np.ndarray, sfreq: float,
                            ch_names: List[str]) -> List[Dict]:
-    """Build aggregate feature groups for the FeatureVisualizer."""
+    """
+    Build aggregate feature groups for the FeatureVisualizer.
+    
+    FIX (v3.2): Per-channel computations use individual channel signals
+    (not mean across channels). This avoids the zero-mean cancellation issue.
+    """
     from scipy import signal as sp
     from scipy import stats as sc_stats
 
@@ -334,17 +399,17 @@ def _build_feature_groups(data: np.ndarray, sfreq: float,
 
     for i, ch in enumerate(ch_names[:8]):
         s = data_uv[i]
-        # Time
+        # Time domain features
         time_feats[f"{ch}_variance"] = float(np.var(s))
         time_feats[f"{ch}_rms"] = float(np.sqrt(np.mean(s ** 2)))
         time_feats[f"{ch}_ptp"] = float(np.ptp(s))
         time_feats[f"{ch}_skewness"] = float(sc_stats.skew(s))
         time_feats[f"{ch}_kurtosis"] = float(sc_stats.kurtosis(s))
-        # Freq
+        # Frequency domain (per-channel, normalised)
         bp = _channel_band_powers(s, sfreq)
         for band, val in bp.items():
             freq_feats[f"{ch}_{band}"] = val
-        # Hjorth
+        # Hjorth parameters
         act, mob, comp = _hjorth(s)
         hjorth_feats[f"{ch}_activity"] = act
         hjorth_feats[f"{ch}_mobility"] = mob
@@ -378,12 +443,11 @@ def _extract_features_for_prediction(data: np.ndarray, sfreq: float,
                                       feature_names: List[str]) -> np.ndarray:
     """
     Extract features matching the training pipeline.
-    CRITICAL: Scale to µV before any frequency-domain computation.
+    Signal is scaled to µV before any frequency-domain computation.
     """
     from scipy import signal as sp
     from scipy import stats as sc_stats
 
-    # ✅ FIX: Scale to µV before feature extraction
     data_uv = _ensure_microvolts(data)
 
     n_ch, n_samp = data_uv.shape
@@ -405,12 +469,12 @@ def _extract_features_for_prediction(data: np.ndarray, sfreq: float,
 
     all_window_feats = []
     per_ch_names = (
-        ["variance", "rms", "ptp", "skewness", "kurtosis"]        # 5 time
-        + [f"{b}_power" for b in BAND_NAMES]                       # 5 freq
-        + ["hj_activity", "hj_mobility", "hj_complexity"]          # 3 hjorth
-        + ["higuchi_fd", "katz_fd"]                                 # 2 fractal
+        ["variance", "rms", "ptp", "skewness", "kurtosis"]
+        + [f"{b}_power" for b in BAND_NAMES]
+        + ["hj_activity", "hj_mobility", "hj_complexity"]
+        + ["higuchi_fd", "katz_fd"]
         + ["approx_entropy", "sample_entropy",
-           "spectral_entropy", "svd_entropy"]                       # 4 entropy
+           "spectral_entropy", "svd_entropy"]
     )
 
     for seg in windows:
@@ -528,11 +592,10 @@ def _extract_features_for_prediction(data: np.ndarray, sfreq: float,
 
 
 def _stress_heuristic(bp_list: List[Dict[str, float]]) -> tuple[float, float]:
-    """Heuristic stress estimation from band powers (expects µV² scale values)."""
+    """Heuristic stress estimation from band powers (normalised 0-10 scale)."""
     pm: Dict[str, float] = {}
     for d in bp_list:
         pm.update(d)
-    # bp_list values are already normalised to 0-10 scale
     delta = pm.get("delta", 1.0) + 1e-10
     theta = pm.get("theta", 1.0) + 1e-10
     alpha = pm.get("alpha", 1.0) + 1e-10
@@ -568,6 +631,7 @@ async def health() -> Dict[str, Any]:
         "optimal_threshold": _OPTIMAL_THRESHOLD,
         "model_path": MODEL_PATH,
         "model_path_exists": os.path.exists(MODEL_PATH),
+        "version": "3.2.0",
     }
 
 
@@ -627,23 +691,24 @@ async def extract_features_endpoint(body: ExtractRequest) -> Dict[str, Any]:
         n_ch, n_samp = data.shape
         ch_names = [f"EEG{i + 1}" for i in range(n_ch)]
 
-        # Window count
         win_len = int(sfreq)
         step    = win_len // 2
         n_windows = max((n_samp - win_len) // step + 1, 1)
 
-        # 1. Per-channel profiles (auto-scales to µV internally)
+        # 1. Per-channel profiles (normalised band powers 0-10)
         profiles = _compute_channel_profiles(data, sfreq, ch_names)
 
-        # 2. Temporal evolution
+        # 2. Temporal evolution (per-channel PSDs averaged — fixes zero-mean bug)
         temporal = _temporal_band_evolution(data, sfreq, window_sec=1.0, overlap=0.5)
 
-        # 3. Feature group summaries
+        # 3. Feature group summaries (per-channel computations)
         groups = _build_feature_groups(data, sfreq, ch_names)
 
-        # 4. Band powers per channel (auto-scales to µV internally)
+        # 4. Band powers per channel — normalised 0-10 for consistent display
+        #    FIX: was returning raw µV² values (inconsistent with /predict)
+        data_uv = _ensure_microvolts(data)
         band_powers_per_ch = [
-            _channel_band_powers(data[i], sfreq)
+            _channel_band_powers(data_uv[i], sfreq)  # normalised 0-10
             for i in range(n_ch)
         ]
 
@@ -683,7 +748,7 @@ async def predict(body: PredictRequest) -> Dict[str, Any]:
             raise ValueError("signal must be 2-D [channels x samples]")
 
         sfreq = body.sfreq
-        # Band powers for display (scales to µV internally)
+        # FIX: _band_powers_avg now averages PSDs across channels (not mean signal)
         bp = _band_powers_avg(data, sfreq)
 
         prediction   = 0
@@ -695,8 +760,6 @@ async def predict(body: PredictRequest) -> Dict[str, Any]:
         if _VOTING is not None:
             try:
                 if _SCALER is not None and _SELECTOR is not None:
-                    # New pipeline: extract full features → scale → select → predict
-                    # Use all_feature_names for ordering if available
                     feat_names_for_extract = _ALL_FEAT_NAMES if _ALL_FEAT_NAMES else []
                     mf_full = _extract_features_for_prediction(data, sfreq, feat_names_for_extract)
                     print(f"[predict] Full feature shape: {mf_full.shape}")
@@ -705,7 +768,6 @@ async def predict(body: PredictRequest) -> Dict[str, Any]:
                     mf_sel    = _SELECTOR.transform(mf_scaled)
                     print(f"[predict] After scaler+selector: {mf_sel.shape}")
                 else:
-                    # Legacy: extract selected features directly
                     mf_sel = _extract_features_for_prediction(data, sfreq, _FEATURE_NAMES)
                     expected = getattr(_VOTING, "n_features_in_", None)
                     if expected and mf_sel.shape[1] != expected:
@@ -718,7 +780,6 @@ async def predict(body: PredictRequest) -> Dict[str, Any]:
 
                 proba       = _VOTING.predict_proba(mf_sel)[0]
                 stress_prob = float(proba[1]) if len(proba) > 1 else float(proba[0])
-                # Use optimal threshold from training
                 prediction  = int(stress_prob >= _OPTIMAL_THRESHOLD)
                 confidence  = float(max(proba))
                 model_source = "trained_model"
@@ -729,7 +790,6 @@ async def predict(body: PredictRequest) -> Dict[str, Any]:
                 import traceback
                 print(f"[predict] Model inference failed: {exc}")
                 traceback.print_exc()
-                # Fall through to heuristic
 
         if model_source == "heuristic":
             stress_prob, confidence = _stress_heuristic(bp)
@@ -746,7 +806,7 @@ async def predict(body: PredictRequest) -> Dict[str, Any]:
         rng = np.random.default_rng(seed=int(stress_prob * 9999))
         imp = rng.dirichlet(np.ones(len(display_features)) * 2)
         for i, label in enumerate(display_features):
-            if "beta" in label:   imp[i] *= 1.0 + pm.get("beta",  0.0) * 0.5
+            if "beta" in label:    imp[i] *= 1.0 + pm.get("beta",  0.0) * 0.5
             elif "alpha" in label: imp[i] *= 1.0 + pm.get("alpha", 0.0) * 0.4
             elif "theta" in label: imp[i] *= 1.0 + pm.get("theta", 0.0) * 0.3
         imp /= imp.sum()
@@ -756,15 +816,14 @@ async def predict(body: PredictRequest) -> Dict[str, Any]:
             key=lambda x: x["importance"], reverse=True,
         )
 
-        # ── Per-channel band powers for Brain3D ────────────────────────────────
+        # ── Per-channel band powers for Brain3D (normalised 0-10 per channel) ──
         data_uv = _ensure_microvolts(data)
         per_ch_bp = []
         for i in range(data.shape[0]):
-            ch_bp = _channel_band_powers(data_uv[i], sfreq)
-            total = sum(ch_bp.values()) + 1e-10
+            ch_bp = _channel_band_powers(data_uv[i], sfreq)  # normalised 0-10
             per_ch_bp.append({
-                "channel": f"EEG{i+1}",
-                **{k: round(v / total * 10.0, 4) for k, v in ch_bp.items()}
+                "channel": f"EEG{i + 1}",
+                **ch_bp
             })
 
         return {
