@@ -130,7 +130,7 @@ The Stroop Color-Word Test measures **cognitive interference** and **executive f
 
 </div>
 <div align="center">
-  <img src="src/assets/miroir.jpg" width="700"/>
+  <img src="src/assets/miroir.png" width="700"/>
 </div>
 
 Participants view pairs of mirror images and must decide whether they are **symmetric or asymmetric** under time pressure. This task primarily engages parietal and occipital regions involved in spatial processing.
@@ -152,7 +152,7 @@ Participants view pairs of mirror images and must decide whether they are **symm
 
 </div>
 <div align="center">
-  <img src="src/assets/math.jpg" width="700"/>
+  <img src="src/assets/math.png" width="700"/>
 </div>
 
 Subjects mentally solve arithmetic problems (addition, subtraction, multiplication) and indicate correctness using a **thumbs up or thumbs down** gesture. Problems increase in difficulty across trials.
