@@ -879,26 +879,26 @@ Upload a raw `.mat` EEG file for preprocessing.
    Ng, K. K., Amin, H. U., Ng, K. H., Price, J., & Subhani, A. R. (2023). EEG Feature Extraction based on Fast Fourier Transform and Wavelet Analysis for Classification of Mental Stress Levels using Machine Learning. Advances in Science, Technology and Engineering Systems Journal, 8(6), 46–56. https://doi.org/10.25046/aj080606
 
 
-4. **Stroop Effect:**
-   Stroop, J. R. (1935). *Studies of interference in serial verbal reactions*. Journal of Experimental Psychology, 18(6), 643–662.
+3. **Stroop Effect:**
+Stroop, J. R. (1935). Studies of interference in serial verbal reactions. Journal of Experimental Psychology, 18(6), 643–662. https://doi.org/10.1037/h0054651
 
-5. **Hjorth Parameters:**
-   Hjorth, B. (1970). *EEG analysis based on time domain properties*. Electroencephalography and Clinical Neurophysiology, 29(3), 306–310.
+4. **Hjorth Parameters:**
+Hjorth, B. (1970). EEG analysis based on time domain properties. Electroencephalography and Clinical Neurophysiology, 29(3), 306–310. https://doi.org/10.1016/0013-4694(70)90100-0
 
-6. **Welch Method:**
-   Welch, P. D. (1967). *The use of fast Fourier transform for the estimation of power spectra*. IEEE Transactions on Audio and Electroacoustics, 15(2), 70–73.
+5. **Welch Method:**
+Welch, P. D. (1967). The use of fast Fourier transform for the estimation of power spectra. IEEE Transactions on Audio and Electroacoustics, 15(2), 70–73. https://doi.org/10.1109/TAU.1967.1161901
 
-7. **Higuchi Fractal Dimension:**
-   Higuchi, T. (1988). *Approach to an irregular time series on the basis of the fractal theory*. Physica D: Nonlinear Phenomena, 31(2), 277–283.
+6. **Higuchi Fractal Dimension:**
+Higuchi, T. (1988). Approach to an irregular time series on the basis of the fractal theory. Physica D: Nonlinear Phenomena, 31(2), 277–283. https://doi.org/10.1016/0167-2789(88)90081-4
 
-8. **ASR Algorithm:**
-   Chang, C. Y., et al. (2020). *Evaluation of artifact subspace reconstruction for automatic artifact components removal in multi-channel EEG recordings*. IEEE Transactions on Biomedical Engineering, 67(4), 1114–1121.
+7. **ASR Algorithm:**
+Chang, C. Y., et al. (2020). Evaluation of artifact subspace reconstruction for automatic artifact components removal in multi-channel EEG recordings. IEEE Transactions on Biomedical Engineering, 67(4), 1114–1121. https://doi.org/10.1109/TBME.2019.2931097
 
-9. **EEG Stress Review:**
-   Sharma, N., & Gedeon, T. (2012). *Objective measures, sensors and computational techniques for stress recognition and classification: A survey*. Computer Methods and Programs in Biomedicine, 108(3), 1287–1301.
+8. **EEG Stress Review:**
+Sharma, N., & Gedeon, T. (2012). Objective measures, sensors and computational techniques for stress recognition and classification: A survey. Computer Methods and Programs in Biomedicine, 108(3), 1287–1301. https://doi.org/10.1016/j.cmpb.2012.07.001
 
-10. **MNE-Python:**
-   Gramfort, A., et al. (2013). *MEG and EEG data analysis with MNE-Python*. Frontiers in Neuroscience, 7, 267.
+9. **MNE-Python:**
+Gramfort, A., et al. (2013). MEG and EEG data analysis with MNE-Python. Frontiers in Neuroscience, 7, 267. https://doi.org/10.3389/fnins.2013.00267
 
 ---
 
