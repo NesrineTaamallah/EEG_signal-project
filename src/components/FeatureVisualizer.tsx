@@ -7,10 +7,10 @@ import {
 } from "recharts";
 import { useStore } from "@/store/useStore";
 import { extractFeatures } from "@/services/api";
-import { 
-  Cpu, TrendingUp, Activity, Zap, 
+import {
+  Cpu, TrendingUp, Activity, Zap,
   Loader2, AlertCircle, ChevronDown, ChevronRight,
-  BarChart2, Grid, Waves
+  Grid, Waves
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -113,10 +113,6 @@ const BAND_COLORS: Record<string, string> = {
   arousal: "#ef4444",
 };
 
-const GROUP_COLORS = [
-  "#7c3aed", "#0d9488", "#3b82f6", "#f59e0b", "#ef4444", "#ec4899"
-];
-
 // ── Main Component ────────────────────────────────────────────────────────────
 
 const FeatureVisualizer: React.FC = () => {
@@ -127,7 +123,7 @@ const FeatureVisualizer: React.FC = () => {
   const [selectedChannel, setSelectedChannel] = useState(0);
   const [activeView, setActiveView] = useState<"radar" | "bar" | "scatter">("radar");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({
-    stats: true, bands: true, temporal: true, channels: true, groups: true
+    stats: true, bands: true, temporal: true, channels: true
   });
 
   const toggle = useCallback((key: string) => {
@@ -281,7 +277,7 @@ const FeatureVisualizer: React.FC = () => {
       {features && (
         <div className="space-y-8">
 
-          {/* ── Stats Overview ─────────────────────────────────────────────── */}
+          {/* ── Stats Overview — only Canaux, Fenêtres, Fréq. éch. ─────────── */}
           <section>
             <SectionHeader
               icon={<Activity className="w-4 h-4" />}
@@ -290,13 +286,7 @@ const FeatureVisualizer: React.FC = () => {
               onToggle={() => toggle("stats")}
             />
             {expanded.stats && (
-              <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
-                <StatCard
-                  label="Features totales"
-                  value={features.statistics.totalFeatures.toLocaleString()}
-                  sub="par fenêtre"
-                  color="text-accent-violet"
-                />
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
                 <StatCard
                   label="Canaux"
                   value={features.statistics.channels}
@@ -571,64 +561,6 @@ const FeatureVisualizer: React.FC = () => {
                     </>
                   )}
                 </div>
-              </div>
-            )}
-          </section>
-
-          {/* ── Feature Groups ────────────────────────────────────────────── */}
-          <section>
-            <SectionHeader
-              icon={<BarChart2 className="w-4 h-4" />}
-              title="Groupes de features — moyenne globale"
-              expanded={expanded.groups}
-              onToggle={() => toggle("groups")}
-            />
-            {expanded.groups && features.groups?.length > 0 && (
-              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                {features.groups.map((group, gi) => {
-                  const entries = Object.entries(group.features).slice(0, 8);
-                  const maxVal = Math.max(...entries.map(([, v]) => Math.abs(v)), 1e-10);
-                  return (
-                    <div key={gi} className="card p-4">
-                      <div className="flex items-center gap-2 mb-4">
-                        <div
-                          className="w-3 h-3 rounded-full"
-                          style={{ backgroundColor: GROUP_COLORS[gi % GROUP_COLORS.length] }}
-                        />
-                        <h4 className="font-bold text-sm text-slate-200">{group.name}</h4>
-                        <span className="text-xs text-slate-500 ml-auto">
-                          {Object.keys(group.features).length} features
-                        </span>
-                      </div>
-                      <div className="space-y-2">
-                        {entries.map(([name, val]) => {
-                          const pct = Math.min((Math.abs(val) / maxVal) * 100, 100);
-                          return (
-                            <div key={name}>
-                              <div className="flex justify-between text-xs mb-0.5">
-                                <span className="text-slate-400 font-mono truncate max-w-[60%]">{name}</span>
-                                <span className="text-slate-300 font-mono">
-                                  {Math.abs(val) < 0.001
-                                    ? val.toExponential(2)
-                                    : val.toFixed(4)}
-                                </span>
-                              </div>
-                              <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                                <div
-                                  className="h-full rounded-full transition-all duration-500"
-                                  style={{
-                                    width: `${pct.toFixed(1)}%`,
-                                    backgroundColor: GROUP_COLORS[gi % GROUP_COLORS.length]
-                                  }}
-                                />
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
               </div>
             )}
           </section>

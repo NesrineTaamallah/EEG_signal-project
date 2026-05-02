@@ -313,42 +313,7 @@ Timestamp     : ${new Date().toLocaleString()}
           {/* ── Right: features + bands ────────────────────────────────── */}
           <div className="lg:col-span-2 space-y-6">
 
-            {/* Feature Importances */}
-            {prediction.topFeatures?.length > 0 && (
-              <div className="card">
-                <h3 className="text-base font-bold mb-5">Top Features Importances</h3>
-                <div className="h-56">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={prediction.topFeatures.slice(0, 8)} layout="vertical">
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" horizontal={false} />
-                      <XAxis
-                        type="number"
-                        stroke="#64748b"
-                        tickFormatter={(v) => `${(v * 100).toFixed(0)}%`}
-                        fontSize={10}
-                      />
-                      <YAxis
-                        dataKey="name"
-                        type="category"
-                        stroke="#64748b"
-                        width={160}
-                        fontSize={9}
-                        tick={{ fontFamily: "monospace" }}
-                      />
-                      <Tooltip content={<CustomTooltip />} />
-                      <Bar dataKey="importance" fill="#7c3aed" radius={[0, 4, 4, 0]}>
-                        {prediction.topFeatures.slice(0, 8).map((_, i) => (
-                          <Cell
-                            key={i}
-                            fill={`hsl(${260 + i * 10}, 70%, ${55 + i * 3}%)`}
-                          />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            )}
+            
 
             {/* Band powers grid + radar */}
             {prediction.bandPowers?.length > 0 && (
