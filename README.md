@@ -668,12 +668,12 @@ cd neurostress-control-room
 ### 2. Python Backend Setup
 
 ```bash
-# Create and activate virtual environment
 python -m venv env311
-source env311/bin/activate          # Linux/macOS
-# env311\Scripts\activate           # Windows
+# Linux/macOS
+source env311/bin/activate
+# Windows          
+env311\Scripts\activate           
 
-# Install Python dependencies
 pip install -r requirements.txt
 ```
 
@@ -719,15 +719,12 @@ Edit `.env.local`:
 # (Optional) Path to trained .joblib model
 NEUROSTRESS_MODEL_PATH=./models/xgb_stress_classifier_ensemble.joblib
 
-# (Optional) Gemini API Key for NeuroAssistant chat
-GEMINI_API_KEY=your_gemini_api_key_here
-
 APP_URL=http://localhost:3000
 ```
 
 ---
 
-### 5. (Optional) Train the ML Model
+### 5.  Train the ML Model
 
 If you have the SAM 40 dataset downloaded, run the full training pipeline:
 
@@ -766,10 +763,7 @@ This starts:
 **Or run them separately:**
 
 ```bash
-# Terminal 1 — Python API
 python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
-
-# Terminal 2 — Vite frontend
 npx vite
 ```
 
@@ -780,9 +774,7 @@ Open **http://localhost:3000** in your browser.
 ### 7. Verify Installation
 
 ```bash
-# Check backend health
 python check_backend.py
-
 # Or via HTTP
 curl http://localhost:8000/health
 ```
