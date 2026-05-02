@@ -659,8 +659,8 @@ neuroctrl/
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/your-username/neurostress-control-room.git
-cd neurostress-control-room
+gh repo clone NesrineTaamallah/EEG_signal-project
+cd EEG_signal-project
 ```
 
 ---
