@@ -17,7 +17,7 @@
 
 ---
 
-## 📋 Table of Contents
+##  Table of Contents
 
 1. [Project Overview](#-project-overview)
 2. [SAM 40 Dataset](#-sam-40-dataset)
@@ -50,7 +50,7 @@
 
 ---
 
-## 🎯 Project Overview
+##  Project Overview
 
 **NeuroStress Control Room** is an end-to-end brain-computer interface (BCI) platform that automatically detects mental stress from raw EEG signals. It combines advanced neurophysiological signal processing with an ensemble machine learning classifier and a real-time 3D visualization dashboard.
 
@@ -63,7 +63,7 @@ The platform was built on top of the **SAM 40 dataset** — a publicly available
 
 ---
 
-## 📊 SAM 40 Dataset
+##  SAM 40 Dataset
 
 ### Dataset Description
 
@@ -97,7 +97,7 @@ The dataset uses three validated psychophysiological stress induction paradigms,
 
 ---
 
-#### 1. 🎨 Stroop Color-Word Test (SCWT)
+#### 1.  Stroop Color-Word Test (SCWT)
 
 <div align="center">
 
@@ -116,7 +116,7 @@ The Stroop Color-Word Test measures **cognitive interference** and **executive f
 
 ---
 
-#### 2. 🪞 Mirror Image Recognition Task
+#### 2.  Mirror Image Recognition Task
 
 <div align="center">
 
@@ -135,7 +135,7 @@ Participants view pairs of mirror images and must decide whether they are **symm
 
 ---
 
-#### 3. ➕ Arithmetic Problem Solving Task
+#### 3.  Arithmetic Problem Solving Task
 
 <div align="center">
 
@@ -174,7 +174,7 @@ label = 0 (NON-STRESS) if score ≤ 5
 
 ---
 
-## 🔬 Theoretical Background
+##  Theoretical Background
 
 ### EEG Signal Properties
 
@@ -207,7 +207,7 @@ The EEG spectrum is partitioned into physiologically meaningful frequency bands,
 
 ---
 
-## ⚙️ Signal Processing Pipeline
+##  Signal Processing Pipeline
 
 ### 1. Noise & Artifact Removal
 
@@ -314,7 +314,7 @@ $$w[n] = 0.5 \left(1 - \cos\left(\frac{2\pi n}{N-1}\right)\right), \quad 0 \leq 
 
 ---
 
-## 📐 Feature Extraction — Mathematical Formulation
+##  Feature Extraction — Mathematical Formulation
 
 For each 1-second window of shape `(n_channels, 256_samples)`, the following feature groups are computed **per channel** and concatenated into a single feature vector.
 
@@ -501,7 +501,7 @@ Computed for up to 5 hemisphere pairs × 5 frequency bands = up to 25 asymmetry 
 
 ---
 
-## 🤖 Machine Learning Pipeline
+##  Machine Learning Pipeline
 
 ### Feature Engineering Summary
 
@@ -556,7 +556,7 @@ where θ_optimal is tuned per training fold (default = 0.5).
 
 ---
 
-## 🖥️ Platform Architecture & Features
+##  Platform Architecture & Features
 
 ### Backend (FastAPI — Python)
 
@@ -594,7 +594,7 @@ where θ_optimal is tuned per training fold (default = 0.5).
 
 ---
 
-## 📁 Project Structure
+##  Project Structure
 
 ```
 neuroctrl/
@@ -716,9 +716,7 @@ cp .env.example .env.local
 Edit `.env.local`:
 
 ```env
-# (Optional) Path to trained .joblib model
 NEUROSTRESS_MODEL_PATH=./models/xgb_stress_classifier_ensemble.joblib
-
 APP_URL=http://localhost:3000
 ```
 
@@ -730,7 +728,7 @@ If you have the SAM 40 dataset downloaded, run the full training pipeline:
 
 ```bash
 # Step 1: Configure data paths
-nano variables.py        # Set DIR_RAW, DIR_CLEANED, LABELS_PATH
+nano variables.py
 
 # Step 2: Preprocess all raw .mat files
 python batch_preprocess.py
