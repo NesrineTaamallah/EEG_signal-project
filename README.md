@@ -920,6 +920,6 @@ Gramfort, A., et al. (2013). MEG and EEG data analysis with MNE-Python. Frontier
 
 *Signal Processing Project — Academic Year 2025–2026*
 
-[Dataset](https://www.sciencedirect.com/science/article/pii/S2352340921010465) · [FastAPI Docs](http://localhost:8000/docs) · [Issues](https://github.com/your-username/neurostress-control-room/issues)
+[Dataset](https://www.sciencedirect.com/science/article/pii/S2352340921010465) · [FastAPI Docs](http://localhost:8000/docs) 
 
 </div>
