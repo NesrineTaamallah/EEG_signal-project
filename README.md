@@ -754,9 +754,7 @@ This generates:
 npm run dev
 ```
 
-This starts:
-- Express server on `http://localhost:3000` (frontend)
-- FastAPI backend on `http://127.0.0.1:8000` (via proxy)
+This starts: express server on `http://localhost:3000` (frontend)
 
 **Or run them separately:**
 
@@ -876,25 +874,30 @@ Upload a raw `.mat` EEG file for preprocessing.
 1. **SAM 40 Dataset:**
    Sharma, M., Achuth, P. V., Deb, D., Tiwari, A. K., & Pachori, R. B. (2022). *SAM 40: Dataset of 40 Subject EEG Recordings to Monitor the Stress, Affect and Meditation*. Data in Brief, 40, 107805. https://doi.org/10.1016/j.dib.2021.107805
 
-2. **Stroop Effect:**
+
+2. **EEG-Based Stress Detection and Analysis:**
+   Ng, K. K., Amin, H. U., Ng, K. H., Price, J., & Subhani, A. R. (2023). EEG Feature Extraction based on Fast Fourier Transform and Wavelet Analysis for Classification of Mental Stress Levels using Machine Learning. Advances in Science, Technology and Engineering Systems Journal, 8(6), 46–56. https://doi.org/10.25046/aj080606
+
+
+4. **Stroop Effect:**
    Stroop, J. R. (1935). *Studies of interference in serial verbal reactions*. Journal of Experimental Psychology, 18(6), 643–662.
 
-3. **Hjorth Parameters:**
+5. **Hjorth Parameters:**
    Hjorth, B. (1970). *EEG analysis based on time domain properties*. Electroencephalography and Clinical Neurophysiology, 29(3), 306–310.
 
-4. **Welch Method:**
+6. **Welch Method:**
    Welch, P. D. (1967). *The use of fast Fourier transform for the estimation of power spectra*. IEEE Transactions on Audio and Electroacoustics, 15(2), 70–73.
 
-5. **Higuchi Fractal Dimension:**
+7. **Higuchi Fractal Dimension:**
    Higuchi, T. (1988). *Approach to an irregular time series on the basis of the fractal theory*. Physica D: Nonlinear Phenomena, 31(2), 277–283.
 
-6. **ASR Algorithm:**
+8. **ASR Algorithm:**
    Chang, C. Y., et al. (2020). *Evaluation of artifact subspace reconstruction for automatic artifact components removal in multi-channel EEG recordings*. IEEE Transactions on Biomedical Engineering, 67(4), 1114–1121.
 
-7. **EEG Stress Review:**
+9. **EEG Stress Review:**
    Sharma, N., & Gedeon, T. (2012). *Objective measures, sensors and computational techniques for stress recognition and classification: A survey*. Computer Methods and Programs in Biomedicine, 108(3), 1287–1301.
 
-8. **MNE-Python:**
+10. **MNE-Python:**
    Gramfort, A., et al. (2013). *MEG and EEG data analysis with MNE-Python*. Frontiers in Neuroscience, 7, 267.
 
 ---
