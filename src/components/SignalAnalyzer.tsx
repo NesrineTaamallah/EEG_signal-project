@@ -25,13 +25,12 @@ const SignalAnalyzer: React.FC = () => {
     try {
       const data = await preprocessSignal(file);
 
-      // Validate the response structure
       if (!data.raw_signal || !Array.isArray(data.raw_signal) || data.raw_signal.length === 0) {
-        throw new Error("Le backend n'a pas retourné de signal valide");
+        throw new Error("The backend did not return a valid signal.");
       }
 
       if (!data.cleaned_signal || !Array.isArray(data.cleaned_signal) || data.cleaned_signal.length === 0) {
-        throw new Error("Le preprocessing n'a pas produit de signal nettoyé");
+        throw new Error("Preprocessing did not produce a cleaned signal.");
       }
 
       setActiveSignal({
@@ -42,12 +41,11 @@ const SignalAnalyzer: React.FC = () => {
       });
       setPipelineStep(1);
     } catch (err: any) {
-      const msg = err?.response?.data?.detail || err?.message || "Erreur inconnue lors du preprocessing";
+      const msg = err?.response?.data?.detail || err?.message || "Unknown error during preprocessing.";
       setError(msg);
       console.error("Preprocessing failed:", err);
     } finally {
       setIsProcessing(false);
-      // Reset input so same file can be re-uploaded
       e.target.value = "";
     }
   };
@@ -68,27 +66,25 @@ const SignalAnalyzer: React.FC = () => {
 
     const traces: any[] = [];
 
-    // Always show raw as reference
     if (activeSignal.raw[selectedChannel]) {
       traces.push({
         x: time,
         y: activeSignal.raw[selectedChannel],
         type: "scattergl",
         mode: "lines",
-        name: "Signal Brut",
+        name: "Raw Signal",
         line: { color: "#64748b", width: 1 },
         opacity: showCleaned ? 0.4 : 1,
       });
     }
 
-    // Show cleaned on top when toggled
     if (showCleaned && activeSignal.cleaned?.[selectedChannel]) {
       traces.push({
         x: time,
         y: activeSignal.cleaned[selectedChannel],
         type: "scattergl",
         mode: "lines",
-        name: "Signal Nettoyé",
+        name: "Cleaned Signal",
         line: { color: "#0d9488", width: 1.5 },
       });
     }
@@ -103,8 +99,8 @@ const SignalAnalyzer: React.FC = () => {
     <div className="space-y-8">
       <header className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight mb-2">Analyseur de Signal</h2>
-          <p className="text-slate-400">Importez et inspectez les signaux EEG avec prétraitement avancé.</p>
+          <h2 className="text-3xl font-bold tracking-tight mb-2">Signal Analyzer</h2>
+          <p className="text-slate-400">Import and inspect EEG signals with advanced preprocessing.</p>
         </div>
 
         <label className={cn(
@@ -112,7 +108,7 @@ const SignalAnalyzer: React.FC = () => {
           isProcessing && "opacity-50 pointer-events-none"
         )}>
           {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-          <span>{isProcessing ? "Traitement en cours..." : "Importer fichier .MAT"}</span>
+          <span>{isProcessing ? "Processing..." : "Import .MAT File"}</span>
           <input
             type="file"
             className="hidden"
@@ -128,7 +124,7 @@ const SignalAnalyzer: React.FC = () => {
         <div className="flex items-start gap-3 p-4 bg-red-500/10 border border-red-500/30 rounded-xl">
           <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
           <div>
-            <p className="text-red-400 font-medium text-sm">Erreur de prétraitement</p>
+            <p className="text-red-400 font-medium text-sm">Preprocessing Error</p>
             <p className="text-red-400/70 text-xs mt-1">{error}</p>
           </div>
         </div>
@@ -139,17 +135,17 @@ const SignalAnalyzer: React.FC = () => {
           <div className="p-4 bg-slate-800/50 rounded-full mb-4">
             <Waves className="w-12 h-12 text-slate-600" />
           </div>
-          <p className="text-slate-500 font-medium">Aucun signal chargé.</p>
-          <p className="text-sm text-slate-600 mt-1">Importez un fichier .MAT pour commencer l'analyse.</p>
-          <p className="text-xs text-slate-700 mt-4">Formats supportés: MATLAB .mat (données EEG 2D)</p>
+          <p className="text-slate-500 font-medium">No signal loaded.</p>
+          <p className="text-sm text-slate-600 mt-1">Import a .MAT file to start the analysis.</p>
+          <p className="text-xs text-slate-700 mt-4">Supported formats: MATLAB .mat (2D EEG data)</p>
         </div>
       ) : isProcessing ? (
         <div className="card h-96 flex flex-col items-center justify-center gap-4">
           <Loader2 className="w-12 h-12 text-accent-violet animate-spin" />
           <div className="text-center">
-            <p className="text-white font-medium">Prétraitement en cours...</p>
+            <p className="text-white font-medium">Preprocessing in progress...</p>
             <p className="text-slate-400 text-sm mt-1">{fileName}</p>
-            <p className="text-slate-500 text-xs mt-2">Filtrage notch 50Hz, passe-bande 1-40Hz, re-référencement</p>
+            <p className="text-slate-500 text-xs mt-2">Notch filter 50 Hz, bandpass 1–40 Hz, re-referencing</p>
           </div>
         </div>
       ) : activeSignal && (
@@ -158,11 +154,11 @@ const SignalAnalyzer: React.FC = () => {
           <div className="flex items-center gap-3 p-3 bg-accent-teal/10 border border-accent-teal/20 rounded-xl">
             <CheckCircle className="w-5 h-5 text-accent-teal shrink-0" />
             <div className="flex-1 min-w-0">
-              <span className="text-accent-teal font-medium text-sm">Signal chargé avec succès</span>
+              <span className="text-accent-teal font-medium text-sm">Signal loaded successfully</span>
               <span className="text-slate-400 text-xs ml-3">
-                {activeSignal.channelNames.length} canaux · {activeSignal.sfreq}Hz ·{" "}
-                {(activeSignal.raw[0]?.length / activeSignal.sfreq).toFixed(1)}s
-                {hasCleanedSignal && " · Signal nettoyé disponible"}
+                {activeSignal.channelNames.length} channels · {activeSignal.sfreq} Hz ·{" "}
+                {(activeSignal.raw[0]?.length / activeSignal.sfreq).toFixed(1)} s
+                {hasCleanedSignal && " · Cleaned signal available"}
               </span>
             </div>
             {fileName && <span className="text-slate-500 text-xs truncate max-w-48">{fileName}</span>}
@@ -173,7 +169,7 @@ const SignalAnalyzer: React.FC = () => {
             <div className="card lg:col-span-1 space-y-6 flex flex-col" style={{ maxHeight: "600px" }}>
               <div className="flex-1 overflow-hidden flex flex-col">
                 <label className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-3 block">
-                  Sélection du canal
+                  Channel Selection
                 </label>
                 <div className="grid grid-cols-2 gap-1.5 overflow-y-auto pr-1 flex-1">
                   {activeSignal.channelNames.map((name, i) => (
@@ -203,10 +199,10 @@ const SignalAnalyzer: React.FC = () => {
                 >
                   <div>
                     <span className="text-sm font-medium text-slate-300 group-hover:text-white transition-colors block">
-                      Signal Nettoyé
+                      Cleaned Signal
                     </span>
                     {!hasCleanedSignal && (
-                      <span className="text-xs text-slate-600">Non disponible</span>
+                      <span className="text-xs text-slate-600">Not available</span>
                     )}
                   </div>
                   <div className={cn(
@@ -222,8 +218,8 @@ const SignalAnalyzer: React.FC = () => {
 
                 <div className="p-3 bg-slate-800/50 rounded-lg border border-slate-700">
                   <p className="text-xs text-slate-400 leading-relaxed">
-                    <span className="text-accent-teal font-medium">Pipeline actif:</span> Notch 50Hz,
-                    Passe-bande 1–40Hz, Référence moyenne
+                    <span className="text-accent-teal font-medium">Active pipeline:</span>{" "}
+                    Notch 50 Hz, Bandpass 1–40 Hz, Average Reference
                   </p>
                 </div>
               </div>
@@ -240,7 +236,7 @@ const SignalAnalyzer: React.FC = () => {
                   plot_bgcolor: "rgba(0,0,0,0)",
                   margin: { t: 40, b: 40, l: 60, r: 20 },
                   xaxis: {
-                    title: "Temps (s)",
+                    title: "Time (s)",
                     color: "#64748b",
                     gridcolor: "#1e293b",
                     zerolinecolor: "#1e293b",
@@ -260,7 +256,7 @@ const SignalAnalyzer: React.FC = () => {
                     y: 1.1,
                   },
                   title: {
-                    text: `Canal: ${activeSignal.channelNames[selectedChannel] ?? `EEG${selectedChannel + 1}`}`,
+                    text: `Channel: ${activeSignal.channelNames[selectedChannel] ?? `EEG${selectedChannel + 1}`}`,
                     font: { color: "#f1f5f9", size: 14 },
                   },
                 }}

@@ -19,8 +19,8 @@ const ComparativeAnalysis: React.FC = () => {
     return (
       <div className="flex flex-col items-center justify-center h-[500px] border-2 border-dashed border-slate-800 rounded-2xl">
         <ArrowLeftRight className="w-16 h-16 text-slate-700 mb-4" />
-        <p className="text-slate-500 font-medium">Aucun signal chargé pour la comparaison.</p>
-        <p className="text-sm text-slate-600 mt-1">Importez un signal dans l'onglet Analyseur.</p>
+        <p className="text-slate-500 font-medium">No signal loaded for comparison.</p>
+        <p className="text-sm text-slate-600 mt-1">Import a signal in the Analyzer tab.</p>
       </div>
     );
   }
@@ -30,10 +30,9 @@ const ComparativeAnalysis: React.FC = () => {
     (_, i) => i / activeSignal.sfreq
   );
 
-  const rawData = activeSignal.raw[selectedChannel] ?? [];
+  const rawData    = activeSignal.raw[selectedChannel] ?? [];
   const cleanedData = hasCleanedSignal ? (activeSignal.cleaned[selectedChannel] ?? []) : [];
 
-  // Compute simple stats for display
   const rawStd = rawData.length > 0
     ? Math.sqrt(rawData.reduce((s, v) => s + v * v, 0) / rawData.length) * 1e6
     : 0;
@@ -48,7 +47,7 @@ const ComparativeAnalysis: React.FC = () => {
       y: rawData,
       type: "scattergl",
       mode: "lines",
-      name: "Brut",
+      name: "Raw",
       line: { color: "#64748b", width: 1 },
     },
   ];
@@ -59,7 +58,7 @@ const ComparativeAnalysis: React.FC = () => {
       y: cleanedData,
       type: "scattergl",
       mode: "lines",
-      name: "Nettoyé (ASR + Filtre)",
+      name: "Cleaned (ASR + Filter)",
       line: { color: "#0d9488", width: 1.5 },
     });
   }
@@ -71,14 +70,14 @@ const ComparativeAnalysis: React.FC = () => {
           <div className="p-2 bg-accent-teal/20 rounded-xl">
             <ArrowLeftRight className="w-6 h-6 text-accent-teal" />
           </div>
-          <h2 className="text-3xl font-bold tracking-tight">Analyse Comparative</h2>
+          <h2 className="text-3xl font-bold tracking-tight">Comparative Analysis</h2>
         </div>
-        <p className="text-slate-400">Comparaison côte à côte du signal brut vs traité.</p>
+        <p className="text-slate-400">Side-by-side comparison of raw vs. processed signal.</p>
       </header>
 
       {!hasCleanedSignal && (
         <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-400 text-sm">
-          ⚠ Signal nettoyé non disponible. Seul le signal brut sera affiché.
+          ⚠ Cleaned signal not available. Only the raw signal will be displayed.
         </div>
       )}
 
@@ -86,7 +85,7 @@ const ComparativeAnalysis: React.FC = () => {
         <div className="card lg:col-span-1 space-y-6">
           <div>
             <label className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-3 block">
-              Canal analysé
+              Selected Channel
             </label>
             <div className="grid grid-cols-2 gap-1.5">
               {activeSignal.channelNames.slice(0, 12).map((name, i) => (
@@ -107,20 +106,20 @@ const ComparativeAnalysis: React.FC = () => {
           </div>
 
           <div className="p-4 bg-slate-800/50 rounded-xl border border-slate-700">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Métriques</h4>
+            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Metrics</h4>
             <div className="space-y-3">
               <div className="flex justify-between items-center">
-                <span className="text-xs text-slate-500">RMS Brut</span>
+                <span className="text-xs text-slate-500">Raw RMS</span>
                 <span className="text-xs font-mono text-slate-300">{rawStd.toFixed(1)} µV</span>
               </div>
               {hasCleanedSignal && (
                 <>
                   <div className="flex justify-between items-center">
-                    <span className="text-xs text-slate-500">RMS Nettoyé</span>
+                    <span className="text-xs text-slate-500">Cleaned RMS</span>
                     <span className="text-xs font-mono text-accent-teal">{cleanStd.toFixed(1)} µV</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-xs text-slate-500">Réduction bruit</span>
+                    <span className="text-xs text-slate-500">Noise reduction</span>
                     <span className={cn(
                       "text-xs font-mono",
                       noiseReduction > 0 ? "text-accent-teal" : "text-red-400"
@@ -131,9 +130,9 @@ const ComparativeAnalysis: React.FC = () => {
                 </>
               )}
               <div className="flex justify-between items-center">
-                <span className="text-xs text-slate-500">Durée</span>
+                <span className="text-xs text-slate-500">Duration</span>
                 <span className="text-xs font-mono text-slate-300">
-                  {(rawData.length / activeSignal.sfreq).toFixed(1)}s
+                  {(rawData.length / activeSignal.sfreq).toFixed(1)} s
                 </span>
               </div>
             </div>
@@ -150,7 +149,7 @@ const ComparativeAnalysis: React.FC = () => {
               plot_bgcolor: "rgba(0,0,0,0)",
               margin: { t: 40, b: 40, l: 60, r: 20 },
               xaxis: {
-                title: "Temps (s)",
+                title: "Time (s)",
                 color: "#64748b",
                 gridcolor: "#1e293b",
                 rangeslider: { visible: true },
@@ -167,7 +166,7 @@ const ComparativeAnalysis: React.FC = () => {
                 y: 1.1,
               },
               title: {
-                text: `Comparaison Signal — ${activeSignal.channelNames[selectedChannel] ?? `EEG${selectedChannel + 1}`}`,
+                text: `Signal Comparison — ${activeSignal.channelNames[selectedChannel] ?? `EEG${selectedChannel + 1}`}`,
                 font: { color: "#f1f5f9", size: 14 },
               },
             }}

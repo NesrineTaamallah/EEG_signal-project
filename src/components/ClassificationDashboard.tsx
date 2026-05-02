@@ -98,7 +98,7 @@ Timestamp     : ${new Date().toLocaleString()}
         : activeSignal.raw;
 
     if (!signalToUse || signalToUse.length === 0) {
-      setClassifyError("Aucun signal disponible pour la classification.");
+      setClassifyError("No signal available for classification.");
       return;
     }
 
@@ -120,7 +120,7 @@ Timestamp     : ${new Date().toLocaleString()}
       setPipelineStep(3);
     } catch (err: any) {
       const msg =
-        err?.response?.data?.detail || err?.message || "Erreur lors de la classification";
+        err?.response?.data?.detail || err?.message || "An error occurred during classification.";
       setClassifyError(msg);
     } finally {
       setIsProcessing(false);
@@ -141,7 +141,7 @@ Timestamp     : ${new Date().toLocaleString()}
     .slice(0, 12)
     .map((ch) => ({
       channel: ch.channel,
-      betaAlpha: ch.alpha > 0 ? +(ch.beta / ch.alpha).toFixed(3) : 0,
+      betaAlpha:  ch.alpha > 0 ? +(ch.beta  / ch.alpha).toFixed(3) : 0,
       thetaAlpha: ch.alpha > 0 ? +(ch.theta / ch.alpha).toFixed(3) : 0,
     }));
 
@@ -149,9 +149,9 @@ Timestamp     : ${new Date().toLocaleString()}
     return (
       <div className="card h-96 flex flex-col items-center justify-center border-dashed border-2 border-slate-800">
         <Brain className="w-12 h-12 text-slate-600 mb-4" />
-        <p className="text-slate-500 font-medium">Aucun signal disponible pour la classification.</p>
+        <p className="text-slate-500 font-medium">No signal available for classification.</p>
         <p className="text-sm text-slate-600 mt-1">
-          Importez et traitez un signal dans l'onglet <strong className="text-slate-400">Analyseur</strong>.
+          Import and process a signal in the <strong className="text-slate-400">Analyser</strong> tab.
         </p>
       </div>
     );
@@ -162,9 +162,9 @@ Timestamp     : ${new Date().toLocaleString()}
       {/* Header */}
       <header className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight mb-2">Moteur de Classification</h2>
+          <h2 className="text-3xl font-bold tracking-tight mb-2">Classification Engine</h2>
           <p className="text-slate-400">
-            Détection de stress via ML — résultats liés au modèle .joblib entraîné.
+            ML-based stress detection — results tied to the trained .joblib model.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -174,7 +174,7 @@ Timestamp     : ${new Date().toLocaleString()}
             className="btn-secondary flex items-center gap-2"
           >
             <FileText className="w-4 h-4" />
-            <span>Rapport</span>
+            <span>Report</span>
           </button>
           <button
             onClick={handleClassify}
@@ -184,7 +184,7 @@ Timestamp     : ${new Date().toLocaleString()}
             {isProcessing
               ? <Loader2 className="w-4 h-4 animate-spin" />
               : <Zap className="w-4 h-4" />}
-            <span>{isProcessing ? "Analyse..." : "Lancer l'inférence"}</span>
+            <span>{isProcessing ? "Analysing..." : "Run Inference"}</span>
           </button>
         </div>
       </header>
@@ -193,18 +193,18 @@ Timestamp     : ${new Date().toLocaleString()}
       <div className="flex flex-wrap gap-4 p-3 bg-slate-800/40 border border-slate-700/50 rounded-xl text-xs">
         <span className="text-slate-400">
           <span className="text-slate-300 font-medium">Signal:</span>{" "}
-          {activeSignal.cleaned?.length > 0 ? "✓ Nettoyé" : "⚠ Brut"}
+          {activeSignal.cleaned?.length > 0 ? "✓ Cleaned" : "⚠ Raw"}
         </span>
         <span className="text-slate-400">
-          <span className="text-slate-300 font-medium">Canaux:</span>{" "}
+          <span className="text-slate-300 font-medium">Channels:</span>{" "}
           {activeSignal.channelNames.length}
         </span>
         <span className="text-slate-400">
-          <span className="text-slate-300 font-medium">Fréq.:</span>{" "}
+          <span className="text-slate-300 font-medium">Sampling Rate:</span>{" "}
           {activeSignal.sfreq} Hz
         </span>
         <span className="text-slate-400">
-          <span className="text-slate-300 font-medium">Durée:</span>{" "}
+          <span className="text-slate-300 font-medium">Duration:</span>{" "}
           {activeSignal.raw[0]
             ? (activeSignal.raw[0].length / activeSignal.sfreq).toFixed(1)
             : "?"} s
@@ -241,13 +241,13 @@ Timestamp     : ${new Date().toLocaleString()}
                   : <ShieldCheck className="w-12 h-12" />}
               </div>
               <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">
-                État Détecté
+                Detected State
               </h3>
               <div className={cn(
                 "text-2xl font-black tracking-tighter mb-5",
                 isStress ? "text-red-500" : "text-green-500"
               )}>
-                {isStress ? "STRESS DÉTECTÉ" : "ÉTAT NORMAL"}
+                {isStress ? "STRESS DETECTED" : "NORMAL STATE"}
               </div>
               <div className="w-full space-y-2">
                 <div className="w-full bg-slate-800 h-3 rounded-full overflow-hidden">
@@ -270,13 +270,13 @@ Timestamp     : ${new Date().toLocaleString()}
             <div className="card">
               <div className="flex items-center gap-2 mb-3">
                 <Info className="w-4 h-4 text-accent-teal" />
-                <h4 className="font-bold text-sm">Confiance du modèle</h4>
+                <h4 className="font-bold text-sm">Model Confidence</h4>
               </div>
               <div className="text-4xl font-bold font-mono text-accent-teal">
                 {Math.round(prediction.confidence * 100)}%
               </div>
               <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                Score de certitude du VotingClassifier (XGBoost + LightGBM + CatBoost).
+                Certainty score from the VotingClassifier (XGBoost + LightGBM + CatBoost).
               </p>
             </div>
 
@@ -298,14 +298,14 @@ Timestamp     : ${new Date().toLocaleString()}
                     : "text-amber-500"
                 )}>
                   {prediction.model_source === "trained_model"
-                    ? "Modèle .joblib actif"
-                    : "Mode heuristique"}
+                    ? ".joblib Model Active"
+                    : "Heuristic Mode"}
                 </span>
               </div>
               <p className="text-xs text-slate-500 leading-relaxed">
                 {prediction.model_source === "trained_model"
-                  ? "Prédiction via le pipeline scaler → selector → VotingClassifier entraîné."
-                  : "Modèle non trouvé. Résultats basés sur les ratios Beta/Alpha, Theta/Alpha et l'indice d'éveil. Définissez NEUROSTRESS_MODEL_PATH dans .env.local pour activer le ML."}
+                  ? "Prediction via the scaler → selector → trained VotingClassifier pipeline."
+                  : "Model not found. Results are based on Beta/Alpha, Theta/Alpha ratios and arousal index. Set NEUROSTRESS_MODEL_PATH in .env.local to enable ML."}
               </p>
             </div>
           </div>
@@ -313,20 +313,18 @@ Timestamp     : ${new Date().toLocaleString()}
           {/* ── Right: features + bands ────────────────────────────────── */}
           <div className="lg:col-span-2 space-y-6">
 
-            
-
             {/* Band powers grid + radar */}
             {prediction.bandPowers?.length > 0 && (
               <div className="card">
                 <h3 className="text-base font-bold mb-5">
-                  Puissances spectrales (normalisées 0–10)
+                  Spectral Band Powers (normalised 0–10)
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Bar columns */}
                   <div className="grid grid-cols-5 gap-3">
                     {prediction.bandPowers.map((bp, i) => {
                       const [band, rawVal] = Object.entries(bp)[0];
-                      const value     = typeof rawVal === "number" ? rawVal : 0;
+                      const value      = typeof rawVal === "number" ? rawVal : 0;
                       const displayPct = Math.min(Math.max((value / 10) * 100, 2), 100);
                       const color      = BAND_COLORS[band] ?? "#64748b";
                       return (
@@ -335,9 +333,9 @@ Timestamp     : ${new Date().toLocaleString()}
                             <div
                               className="absolute bottom-0 w-full transition-all duration-1000 rounded-b-lg"
                               style={{
-                                height:      `${Math.round(displayPct)}%`,
+                                height:          `${Math.round(displayPct)}%`,
                                 backgroundColor: color + "55",
-                                borderTop:   `2px solid ${color}`,
+                                borderTop:       `2px solid ${color}`,
                               }}
                             />
                             <div className="absolute bottom-2 w-full text-center">
@@ -372,7 +370,7 @@ Timestamp     : ${new Date().toLocaleString()}
                           tick={{ fill: "#64748b", fontSize: 8 }}
                         />
                         <Radar
-                          name="Puissance"
+                          name="Power"
                           dataKey="value"
                           stroke="#7c3aed"
                           fill="#7c3aed"
@@ -387,14 +385,14 @@ Timestamp     : ${new Date().toLocaleString()}
               </div>
             )}
 
-            {/* Per-channel ratios (from bandPowersPerCh) */}
+            {/* Per-channel ratios */}
             {perChBarData.length > 0 && (
               <div className="card">
                 <h3 className="text-base font-bold mb-2">
-                  Ratios β/α et θ/α par canal
+                  β/α and θ/α Ratios per Channel
                 </h3>
                 <p className="text-xs text-slate-500 mb-4">
-                  β/α élevé → stress cognitif · θ/α élevé → engagement / fatigue
+                  High β/α → cognitive stress · High θ/α → engagement / fatigue
                 </p>
                 <div className="h-48">
                   <ResponsiveContainer width="100%" height="100%">
@@ -425,10 +423,10 @@ Timestamp     : ${new Date().toLocaleString()}
         <div className="card h-64 flex flex-col items-center justify-center border-dashed border-slate-700">
           <Zap className="w-10 h-10 text-slate-700 mb-3" />
           <p className="text-slate-500">
-            Cliquez sur "Lancer l'inférence" pour classifier le signal EEG.
+            Click "Run Inference" to classify the EEG signal.
           </p>
           <p className="text-xs text-slate-600 mt-2">
-            Le backend utilisera le modèle .joblib si NEUROSTRESS_MODEL_PATH est défini dans .env.local
+            The backend will use the .joblib model if NEUROSTRESS_MODEL_PATH is set in .env.local
           </p>
         </div>
       )}

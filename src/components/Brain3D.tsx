@@ -57,7 +57,7 @@ function BrainMesh({
   const glowRef = useRef<THREE.Mesh>(null);
   const [hovered, setHovered] = useState(false);
 
-  const color            = useMemo(() => getStressColor(stressLevel), [stressLevel]);
+  const color             = useMemo(() => getStressColor(stressLevel), [stressLevel]);
   const dominantBandColor = useMemo(() => getBandColor(getDominantBand(frequencyData)), [frequencyData]);
   const dominantBand      = useMemo(() => getDominantBand(frequencyData), [frequencyData]);
 
@@ -132,15 +132,18 @@ function BrainMesh({
       {hovered && (
         <Html distanceFactor={3}>
           <div className="rounded-lg bg-slate-900/95 px-4 py-2.5 text-xs backdrop-blur border border-slate-700 shadow-xl min-w-[160px]">
-            <p className="font-semibold text-white mb-1">Activité Cérébrale</p>
+            <p className="font-semibold text-white mb-1">Brain Activity</p>
             <p className="text-slate-400">
-              Stress: <span className={cn(
+              Stress:{" "}
+              <span className={cn(
                 "font-mono font-bold",
                 stressLevel > 60 ? "text-red-400" : stressLevel > 40 ? "text-amber-400" : "text-green-400"
-              )}>{Math.round(stressLevel)}%</span>
+              )}>
+                {Math.round(stressLevel)}%
+              </span>
             </p>
             <p className="text-slate-400">
-              Bande dominante:{" "}
+              Dominant band:{" "}
               <span className="text-white font-medium">{dominantBand.toUpperCase()}</span>
             </p>
           </div>
@@ -170,10 +173,7 @@ function ElectrodeNode({
   const meshRef = useRef<THREE.Mesh>(null);
   const [hovered, setHovered] = useState(false);
 
-  const color = useMemo(() => {
-    const base = new THREE.Color(bandColor);
-    return base;
-  }, [bandColor]);
+  const color = useMemo(() => new THREE.Color(bandColor), [bandColor]);
 
   useFrame((state) => {
     if (meshRef.current) {
@@ -249,24 +249,19 @@ function ElectrodeNetwork({
   return (
     <group>
       {ELECTRODE_POSITIONS.map((electrode, idx) => {
-        // Match channel data by index if available
-        const chKey = `EEG${idx + 1}`;
+        const chKey  = `EEG${idx + 1}`;
         const chData = channelBandPowers[chKey];
 
         let activityPct: number;
         let bandCol: string;
 
         if (chData) {
-          // Use real beta/alpha ratio as activity indicator
           const alpha = (chData["alpha"] ?? 1) + 1e-10;
           const beta  = chData["beta"]  ?? 0;
-          const dominantVal = chData[dominantBand] ?? 0;
           activityPct = Math.min((beta / alpha) * 20 + stressLevel * 0.3, 100);
-          bandCol = bandColorHex[dominantBand] ?? "#10b981";
-          // Blend toward stress color when stress is high
+          bandCol     = bandColorHex[dominantBand] ?? "#10b981";
           if (stressLevel > 60) bandCol = "#ef4444";
         } else {
-          // Fallback: spatial + stress heuristic
           activityPct = Math.min(
             (Math.abs(electrode.x + electrode.y) * 25 + stressLevel * 0.4) % 100,
             100
@@ -299,7 +294,7 @@ function NeuralParticles({
   stressLevel: number;
   dominantBand: string;
 }) {
-  const particlesRef = useRef<THREE.Points>(null);
+  const particlesRef  = useRef<THREE.Points>(null);
   const particleCount = 300;
 
   const [positions, velocities] = useMemo(() => {
@@ -331,7 +326,7 @@ function NeuralParticles({
       posAttr.array[idx + 1] += (velocities[idx + 1] as number) * speed * delta * 30;
       posAttr.array[idx + 2] += (velocities[idx + 2] as number) * speed * delta * 30;
       const dist = Math.sqrt(
-        (posAttr.array[idx] as number)     ** 2 +
+        (posAttr.array[idx]     as number) ** 2 +
         (posAttr.array[idx + 1] as number) ** 2 +
         (posAttr.array[idx + 2] as number) ** 2
       );
@@ -384,9 +379,9 @@ function Scene({
   dominantBand: string;
   channelBandPowers: Record<string, Record<string, number>>;
 }) {
-  const norm     = stressLevel / 100;
-  const coolCol  = new THREE.Color("#0d9488");
-  const hotCol   = new THREE.Color("#ef4444");
+  const norm    = stressLevel / 100;
+  const coolCol = new THREE.Color("#0d9488");
+  const hotCol  = new THREE.Color("#ef4444");
   const dynColor = coolCol.clone().lerp(hotCol, norm);
 
   return (
@@ -488,7 +483,7 @@ const Brain3D: React.FC = () => {
 
   const BAND_HEX: Record<string, string> = {
     delta: "#3b82f6", theta: "#06b6d4",
-    alpha: "#10b981", beta: "#f59e0b", gamma: "#a855f7",
+    alpha: "#10b981", beta:  "#f59e0b", gamma: "#a855f7",
   };
 
   return (
@@ -499,37 +494,37 @@ const Brain3D: React.FC = () => {
           <div className="p-2 bg-accent-violet/20 rounded-xl">
             <Brain className="w-6 h-6 text-accent-violet" />
           </div>
-          <h2 className="text-3xl font-bold tracking-tight">Carte Neurale 3D</h2>
+          <h2 className="text-3xl font-bold tracking-tight">3D Neural Map</h2>
         </div>
         <p className="text-slate-400">
-          Cartographie dynamique des activités EEG — liée en temps réel aux résultats de classification.
+          Dynamic EEG activity mapping — linked in real time to classification results.
         </p>
       </header>
 
       {!prediction && (
         <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-400 text-sm flex items-center gap-2">
           <Zap className="w-4 h-4 shrink-0" />
-          Aucune prédiction disponible. Lancez une classification dans l'onglet{" "}
-          <strong>Classification</strong> pour animer le cerveau avec des données réelles.
+          No prediction available. Run a classification in the{" "}
+          <strong>Classification</strong> tab to animate the brain with real data.
         </div>
       )}
 
       {prediction && (
         <div className="flex flex-wrap gap-4 p-3 bg-slate-800/40 border border-slate-700/50 rounded-xl text-xs">
           <span className="text-slate-400">
-            <span className="text-slate-300 font-medium">Modèle:</span>{" "}
+            <span className="text-slate-300 font-medium">Model:</span>{" "}
             {prediction.model_source === "trained_model"
-              ? <span className="text-accent-teal">✓ .joblib actif</span>
-              : <span className="text-amber-400">⚠ Heuristique</span>}
+              ? <span className="text-accent-teal">✓ .joblib active</span>
+              : <span className="text-amber-400">⚠ Heuristic</span>}
           </span>
           <span className="text-slate-400">
-            <span className="text-slate-300 font-medium">Bande dominante:</span>{" "}
+            <span className="text-slate-300 font-medium">Dominant band:</span>{" "}
             <span style={{ color: BAND_HEX[dominantBand] ?? "#fff" }} className="font-bold">
               {dominantBand.toUpperCase()}
             </span>
           </span>
           <span className="text-slate-400">
-            <span className="text-slate-300 font-medium">Canaux avec données réelles:</span>{" "}
+            <span className="text-slate-300 font-medium">Channels with real data:</span>{" "}
             {Object.keys(channelBandPowers).length}
           </span>
         </div>
@@ -584,7 +579,7 @@ const Brain3D: React.FC = () => {
             {isProcessing && (
               <div className="absolute right-4 top-4 flex items-center gap-2 rounded-full bg-accent-violet/20 px-3 py-1.5 text-xs backdrop-blur border border-accent-violet/30">
                 <div className="h-2 w-2 animate-pulse rounded-full bg-accent-violet" />
-                <span className="text-accent-violet font-medium">Traitement...</span>
+                <span className="text-accent-violet font-medium">Processing...</span>
               </div>
             )}
 
@@ -593,14 +588,14 @@ const Brain3D: React.FC = () => {
               <div className="absolute top-4 left-4 bg-slate-900/80 backdrop-blur rounded-xl border border-slate-700 px-4 py-2">
                 <div className="flex items-center gap-2">
                   <Activity className="w-3 h-3 text-slate-400" />
-                  <span className="text-xs text-slate-400">Niveau de stress</span>
+                  <span className="text-xs text-slate-400">Stress Level</span>
                 </div>
                 <div
                   className="text-2xl font-black font-mono mt-0.5"
                   style={{
                     color: stressLevel > 60
                       ? "#ef4444"
-                      : stressLevel > 40 ? "#f59e0b" : "#10b981"
+                      : stressLevel > 40 ? "#f59e0b" : "#10b981",
                   }}
                 >
                   {Math.round(stressLevel)}%
@@ -615,7 +610,7 @@ const Brain3D: React.FC = () => {
               <div className="flex justify-between items-start mb-4">
                 <div>
                   <div className="text-accent-teal font-mono text-xs font-bold uppercase tracking-widest mb-1">
-                    Électrode
+                    Electrode
                   </div>
                   <h3 className="text-2xl font-black text-white leading-none">
                     {selectedElectrodeData.name}
@@ -630,11 +625,11 @@ const Brain3D: React.FC = () => {
               </div>
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between py-1.5 border-b border-slate-800/50">
-                  <span className="text-slate-500 font-bold uppercase text-[10px]">Région</span>
+                  <span className="text-slate-500 font-bold uppercase text-[10px]">Region</span>
                   <span className="text-white">{selectedElectrodeData.region}</span>
                 </div>
                 <div className="flex justify-between py-1.5 border-b border-slate-800/50">
-                  <span className="text-slate-500 font-bold uppercase text-[10px]">Activité</span>
+                  <span className="text-slate-500 font-bold uppercase text-[10px]">Activity</span>
                   <span className="text-accent-teal font-mono font-bold">
                     {selectedElectrodeData.value.toFixed(1)}%
                   </span>
@@ -672,14 +667,14 @@ const Brain3D: React.FC = () => {
           {/* Stress gauge */}
           <div className="card p-4">
             <h4 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-3">
-              Niveau de Stress
+              Stress Level
             </h4>
             <div
               className="text-3xl font-black font-mono"
               style={{
                 color: stressLevel > 60
                   ? "#ef4444"
-                  : stressLevel > 40 ? "#f59e0b" : "#10b981"
+                  : stressLevel > 40 ? "#f59e0b" : "#10b981",
               }}
             >
               {Math.round(stressLevel)}%
@@ -697,19 +692,19 @@ const Brain3D: React.FC = () => {
             </div>
             <p className="text-[10px] text-slate-600 mt-2">
               {prediction?.model_source === "trained_model"
-                ? "Source: modèle .joblib"
-                : "Source: heuristique EEG"}
+                ? "Source: .joblib model"
+                : "Source: EEG heuristic"}
             </p>
           </div>
 
-          {/* Band EEG */}
+          {/* EEG Bands */}
           <div className="card p-4">
             <h4 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-4">
-              Bandes EEG
+              EEG Bands
             </h4>
             <div className="space-y-3">
               {bandDisplayValues.map(({ band, value, displayPct }) => {
-                const hexColor = BAND_HEX[band] ?? "#64748b";
+                const hexColor   = BAND_HEX[band] ?? "#64748b";
                 const isDominant = band === dominantBand;
                 return (
                   <div key={band}>
@@ -724,14 +719,11 @@ const Brain3D: React.FC = () => {
                     </div>
                     <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
                       <div
-                        className={cn(
-                          "h-full transition-all duration-1000",
-                          isDominant && "shadow-sm"
-                        )}
+                        className={cn("h-full transition-all duration-1000", isDominant && "shadow-sm")}
                         style={{
-                          width: `${Math.round(displayPct)}%`,
+                          width:           `${Math.round(displayPct)}%`,
                           backgroundColor: hexColor,
-                          boxShadow: isDominant ? `0 0 6px ${hexColor}` : "none",
+                          boxShadow:       isDominant ? `0 0 6px ${hexColor}` : "none",
                         }}
                       />
                     </div>
@@ -759,7 +751,8 @@ const Brain3D: React.FC = () => {
                 {prediction.prediction === 1 ? "⚠ STRESS" : "✓ NORMAL"}
               </div>
               <div className="text-xs text-slate-500 mt-1">
-                Confiance: <span className="text-white font-mono">
+                Confidence:{" "}
+                <span className="text-white font-mono">
                   {Math.round(prediction.confidence * 100)}%
                 </span>
               </div>

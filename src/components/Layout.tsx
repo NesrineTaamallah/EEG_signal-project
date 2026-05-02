@@ -1,7 +1,7 @@
 import React from "react";
 import {
   Brain, Activity, BarChart3, Zap, Layers,
-  MessageSquare, ArrowLeftRight, Cpu
+  ArrowLeftRight, Cpu
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -19,7 +19,6 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
     { id: "features",   label: "Feature Explorer",  icon: Cpu },
     { id: "classify",   label: "Classification",    icon: Zap },
     { id: "brain",      label: "3D Brain Map",      icon: Brain },
-    { id: "assistant",  label: "Neuro-Assistant",   icon: MessageSquare },
     { id: "pipeline",   label: "Pipeline",          icon: Layers },
   ];
 

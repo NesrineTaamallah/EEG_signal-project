@@ -11,7 +11,6 @@ import SignalAnalyzer from "./components/SignalAnalyzer";
 import ClassificationDashboard from "./components/ClassificationDashboard";
 import Brain3D from "./components/Brain3D";
 import PipelineStepper from "./components/PipelineStepper";
-import NeuroAssistant from "./components/NeuroAssistant";
 import ComparativeAnalysis from "./components/ComparativeAnalysis";
 import FeatureVisualizer from "./components/FeatureVisualizer";
 import { motion, AnimatePresence } from "motion/react";
@@ -37,7 +36,6 @@ export default function App() {
       case "classify":   return <ClassificationDashboard />;
       case "brain":      return <Brain3D />;
       case "pipeline":   return <PipelineStepper />;
-      case "assistant":  return <NeuroAssistant />;
       default:           return <Dashboard />;
     }
   };

@@ -70,10 +70,7 @@ const SectionHeader: React.FC<{
   expanded: boolean;
   onToggle: () => void;
 }> = ({ icon, title, expanded, onToggle }) => (
-  <button
-    onClick={onToggle}
-    className="flex items-center gap-3 w-full text-left group"
-  >
+  <button onClick={onToggle} className="flex items-center gap-3 w-full text-left group">
     <div className="p-2 bg-slate-800 rounded-lg text-accent-violet group-hover:bg-slate-700 transition-colors">
       {icon}
     </div>
@@ -108,7 +105,7 @@ const BAND_COLORS: Record<string, string> = {
   delta: "#3b82f6",
   theta: "#06b6d4",
   alpha: "#10b981",
-  beta: "#f59e0b",
+  beta:  "#f59e0b",
   gamma: "#a855f7",
   arousal: "#ef4444",
 };
@@ -139,38 +136,35 @@ const FeatureVisualizer: React.FC = () => {
       const result = await extractFeatures(signal, activeSignal.sfreq);
       setFeatures(result);
     } catch (err: any) {
-      setError(err?.response?.data?.detail || err?.message || "Feature extraction failed");
+      setError(err?.response?.data?.detail || err?.message || "Feature extraction failed.");
     } finally {
       setIsExtracting(false);
     }
   }, [activeSignal]);
 
-  // Build radar data from feature groups for selected channel
   const radarData = useMemo(() => {
     if (!features?.channelProfiles?.[selectedChannel]) return [];
     const ch = features.channelProfiles[selectedChannel];
     return [
-      { feature: "Variance", value: Math.min(Math.abs(ch.variance) * 100, 100) },
-      { feature: "RMS", value: Math.min(ch.rms * 100, 100) },
-      { feature: "Mobility", value: Math.min(ch.mobility * 50, 100) },
+      { feature: "Variance",   value: Math.min(Math.abs(ch.variance) * 100, 100) },
+      { feature: "RMS",        value: Math.min(ch.rms * 100, 100) },
+      { feature: "Mobility",   value: Math.min(ch.mobility * 50, 100) },
       { feature: "Complexity", value: Math.min(ch.complexity * 30, 100) },
-      { feature: "β/α Ratio", value: Math.min(ch.betaAlpha * 20, 100) },
-      { feature: "θ/α Ratio", value: Math.min(ch.thetaAlpha * 20, 100) },
-      { feature: "Entropy", value: Math.min(ch.entropy * 15, 100) },
+      { feature: "β/α Ratio",  value: Math.min(ch.betaAlpha * 20, 100) },
+      { feature: "θ/α Ratio",  value: Math.min(ch.thetaAlpha * 20, 100) },
+      { feature: "Entropy",    value: Math.min(ch.entropy * 15, 100) },
     ];
   }, [features, selectedChannel]);
 
-  // Band power bar data across all channels
   const bandBarData = useMemo(() => {
     if (!features?.channelProfiles) return [];
     return features.channelProfiles.map((ch, i) => ({
       channel: ch.channel || `EEG${i + 1}`,
-      beta: ch.betaAlpha,
+      beta:  ch.betaAlpha,
       theta: ch.thetaAlpha,
     }));
   }, [features]);
 
-  // Scatter: complexity vs entropy per channel
   const scatterData = useMemo(() => {
     if (!features?.channelProfiles) return [];
     return features.channelProfiles.map((ch, i) => ({
@@ -185,9 +179,9 @@ const FeatureVisualizer: React.FC = () => {
     return (
       <div className="card h-96 flex flex-col items-center justify-center border-dashed border-2 border-slate-800">
         <Cpu className="w-12 h-12 text-slate-600 mb-4" />
-        <p className="text-slate-500 font-medium">Aucun signal chargé.</p>
+        <p className="text-slate-500 font-medium">No signal loaded.</p>
         <p className="text-sm text-slate-600 mt-1">
-          Importez un signal EEG dans l'onglet <strong className="text-slate-400">Analyseur</strong> d'abord.
+          Import an EEG signal in the <strong className="text-slate-400">Analyzer</strong> tab first.
         </p>
       </div>
     );
@@ -205,7 +199,7 @@ const FeatureVisualizer: React.FC = () => {
             <h2 className="text-3xl font-bold tracking-tight">Feature Explorer</h2>
           </div>
           <p className="text-slate-400">
-            Visualisation interactive des caractéristiques EEG extraites du signal.
+            Interactive visualization of extracted EEG features.
           </p>
         </div>
 
@@ -214,10 +208,8 @@ const FeatureVisualizer: React.FC = () => {
           disabled={isExtracting}
           className="btn-primary flex items-center gap-2"
         >
-          {isExtracting
-            ? <Loader2 className="w-4 h-4 animate-spin" />
-            : <Zap className="w-4 h-4" />}
-          <span>{isExtracting ? "Extraction..." : "Extraire les features"}</span>
+          {isExtracting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+          <span>{isExtracting ? "Extracting..." : "Extract Features"}</span>
         </button>
       </header>
 
@@ -225,18 +217,18 @@ const FeatureVisualizer: React.FC = () => {
       <div className="flex flex-wrap gap-4 p-3 bg-slate-800/40 border border-slate-700/50 rounded-xl text-xs">
         <span className="text-slate-400">
           <span className="text-slate-300 font-medium">Signal:</span>{" "}
-          {activeSignal.cleaned?.length > 0 ? "✓ Nettoyé" : "⚠ Brut"}
+          {activeSignal.cleaned?.length > 0 ? "✓ Cleaned" : "⚠ Raw"}
         </span>
         <span className="text-slate-400">
-          <span className="text-slate-300 font-medium">Canaux:</span>{" "}
+          <span className="text-slate-300 font-medium">Channels:</span>{" "}
           {activeSignal.channelNames.length}
         </span>
         <span className="text-slate-400">
-          <span className="text-slate-300 font-medium">Fréq.:</span>{" "}
+          <span className="text-slate-300 font-medium">Sample rate:</span>{" "}
           {activeSignal.sfreq} Hz
         </span>
         <span className="text-slate-400">
-          <span className="text-slate-300 font-medium">Durée:</span>{" "}
+          <span className="text-slate-300 font-medium">Duration:</span>{" "}
           {activeSignal.raw[0]
             ? (activeSignal.raw[0].length / activeSignal.sfreq).toFixed(1)
             : "?"} s
@@ -254,10 +246,10 @@ const FeatureVisualizer: React.FC = () => {
         <div className="card h-64 flex flex-col items-center justify-center border-dashed border-slate-700">
           <Grid className="w-10 h-10 text-slate-700 mb-3" />
           <p className="text-slate-500 text-sm">
-            Cliquez sur "Extraire les features" pour analyser le signal EEG.
+            Click "Extract Features" to analyze the EEG signal.
           </p>
           <p className="text-slate-600 text-xs mt-2">
-            Extraction de features temporelles, fréquentielles, Hjorth, fractales et d'entropie.
+            Extracts time-domain, frequency, Hjorth, fractal, and entropy features.
           </p>
         </div>
       )}
@@ -266,9 +258,9 @@ const FeatureVisualizer: React.FC = () => {
         <div className="card h-64 flex flex-col items-center justify-center gap-4">
           <Loader2 className="w-10 h-10 text-accent-violet animate-spin" />
           <div className="text-center">
-            <p className="text-white font-medium">Extraction en cours...</p>
+            <p className="text-white font-medium">Extracting features...</p>
             <p className="text-slate-400 text-sm mt-1">
-              Calcul des features temporelles, spectrales, Hjorth, fractales et d'entropie
+              Computing time-domain, spectral, Hjorth, fractal and entropy features
             </p>
           </div>
         </div>
@@ -277,50 +269,50 @@ const FeatureVisualizer: React.FC = () => {
       {features && (
         <div className="space-y-8">
 
-          {/* ── Stats Overview — only Canaux, Fenêtres, Fréq. éch. ─────────── */}
+          {/* ── Stats Overview ────────────────────────────────────────── */}
           <section>
             <SectionHeader
               icon={<Activity className="w-4 h-4" />}
-              title="Vue d'ensemble"
+              title="Overview"
               expanded={expanded.stats}
               onToggle={() => toggle("stats")}
             />
             {expanded.stats && (
               <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
                 <StatCard
-                  label="Canaux"
+                  label="Channels"
                   value={features.statistics.channels}
                   sub={activeSignal.channelNames[0] + " ... " + activeSignal.channelNames.at(-1)}
                   color="text-accent-teal"
                 />
                 <StatCard
-                  label="Fenêtres"
+                  label="Windows"
                   value={features.statistics.windows}
-                  sub="chevauchement 50%"
+                  sub="50% overlap"
                   color="text-blue-400"
                 />
                 <StatCard
-                  label="Fréq. éch."
+                  label="Sample Rate"
                   value={features.statistics.samplingRate + " Hz"}
-                  sub="fenêtre 1s"
+                  sub="1 s window"
                   color="text-amber-400"
                 />
               </div>
             )}
           </section>
 
-          {/* ── Band Powers Temporal Evolution ─────────────────────────────── */}
+          {/* ── Band Power Temporal Evolution ─────────────────────────── */}
           <section>
             <SectionHeader
               icon={<Waves className="w-4 h-4" />}
-              title="Évolution temporelle des bandes de fréquence"
+              title="Temporal Evolution of Frequency Bands"
               expanded={expanded.temporal}
               onToggle={() => toggle("temporal")}
             />
             {expanded.temporal && features.temporalEvolution?.length > 0 && (
               <div className="mt-4 card p-4">
                 <p className="text-xs text-slate-500 mb-4">
-                  Puissance par bande (µV²/Hz) sur chaque fenêtre d'analyse — moyenne de tous les canaux
+                  Band power (µV²/Hz) per analysis window — averaged across all channels
                 </p>
                 <ResponsiveContainer width="100%" height={240}>
                   <LineChart data={features.temporalEvolution}>
@@ -329,7 +321,7 @@ const FeatureVisualizer: React.FC = () => {
                       dataKey="window"
                       stroke="#64748b"
                       fontSize={10}
-                      label={{ value: "Fenêtre", position: "insideBottom", offset: -4, fill: "#64748b", fontSize: 11 }}
+                      label={{ value: "Window", position: "insideBottom", offset: -4, fill: "#64748b", fontSize: 11 }}
                     />
                     <YAxis stroke="#64748b" fontSize={10} />
                     <Tooltip content={<CustomTooltip />} />
@@ -352,7 +344,7 @@ const FeatureVisualizer: React.FC = () => {
                 {/* Arousal index */}
                 <div className="mt-4 border-t border-slate-800 pt-4">
                   <p className="text-xs text-slate-500 mb-3">
-                    Indice d'éveil (β+γ)/(δ+θ+α) — marqueur EEG du stress
+                    Arousal index (β+γ)/(δ+θ+α) — EEG stress marker
                   </p>
                   <ResponsiveContainer width="100%" height={100}>
                     <LineChart data={features.temporalEvolution}>
@@ -372,18 +364,18 @@ const FeatureVisualizer: React.FC = () => {
                     </LineChart>
                   </ResponsiveContainer>
                   <p className="text-xs text-slate-600 mt-1">
-                    Ligne jaune = seuil 1.0 (au-dessus = plus de stress potentiel)
+                    Yellow line = threshold 1.0 (above = higher potential stress)
                   </p>
                 </div>
               </div>
             )}
           </section>
 
-          {/* ── Per-channel Analysis ───────────────────────────────────────── */}
+          {/* ── Per-channel Analysis ───────────────────────────────────── */}
           <section>
             <SectionHeader
               icon={<Activity className="w-4 h-4" />}
-              title="Profil par canal"
+              title="Channel Profile"
               expanded={expanded.channels}
               onToggle={() => toggle("channels")}
             />
@@ -420,7 +412,7 @@ const FeatureVisualizer: React.FC = () => {
                           : "bg-slate-800 text-slate-400 hover:bg-slate-700"
                       )}
                     >
-                      {v === "radar" ? "Radar" : v === "bar" ? "Ratios spectraux" : "Complexité/Entropie"}
+                      {v === "radar" ? "Radar" : v === "bar" ? "Spectral Ratios" : "Complexity/Entropy"}
                     </button>
                   ))}
                 </div>
@@ -429,24 +421,17 @@ const FeatureVisualizer: React.FC = () => {
                   {activeView === "radar" && (
                     <>
                       <p className="text-xs text-slate-500 mb-2">
-                        Canal sélectionné:{" "}
+                        Selected channel:{" "}
                         <span className="text-accent-violet font-medium">
                           {features.channelProfiles[selectedChannel]?.channel || `EEG${selectedChannel + 1}`}
                         </span>{" "}
-                        — profil normalisé 0–100
+                        — normalized profile 0–100
                       </p>
                       <ResponsiveContainer width="100%" height={300}>
                         <RadarChart data={radarData}>
                           <PolarGrid stroke="#1e293b" />
-                          <PolarAngleAxis
-                            dataKey="feature"
-                            tick={{ fill: "#94a3b8", fontSize: 11 }}
-                          />
-                          <PolarRadiusAxis
-                            angle={30}
-                            domain={[0, 100]}
-                            tick={{ fill: "#64748b", fontSize: 9 }}
-                          />
+                          <PolarAngleAxis dataKey="feature" tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                          <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: "#64748b", fontSize: 9 }} />
                           <Radar
                             name="Feature"
                             dataKey="value"
@@ -458,18 +443,17 @@ const FeatureVisualizer: React.FC = () => {
                           <Tooltip content={<CustomTooltip />} />
                         </RadarChart>
                       </ResponsiveContainer>
-                      {/* Detailed values */}
                       <div className="grid grid-cols-4 gap-2 mt-4 border-t border-slate-800 pt-4">
                         {features.channelProfiles[selectedChannel] && (
                           <>
                             {[
-                              ["Variance", features.channelProfiles[selectedChannel].variance.toExponential(2)],
-                              ["RMS", features.channelProfiles[selectedChannel].rms.toExponential(2)],
-                              ["Mobility", features.channelProfiles[selectedChannel].mobility.toFixed(4)],
+                              ["Variance",   features.channelProfiles[selectedChannel].variance.toExponential(2)],
+                              ["RMS",        features.channelProfiles[selectedChannel].rms.toExponential(2)],
+                              ["Mobility",   features.channelProfiles[selectedChannel].mobility.toFixed(4)],
                               ["Complexity", features.channelProfiles[selectedChannel].complexity.toFixed(4)],
-                              ["β/α", features.channelProfiles[selectedChannel].betaAlpha.toFixed(3)],
-                              ["θ/α", features.channelProfiles[selectedChannel].thetaAlpha.toFixed(3)],
-                              ["Entropy", features.channelProfiles[selectedChannel].entropy.toFixed(4)],
+                              ["β/α",        features.channelProfiles[selectedChannel].betaAlpha.toFixed(3)],
+                              ["θ/α",        features.channelProfiles[selectedChannel].thetaAlpha.toFixed(3)],
+                              ["Entropy",    features.channelProfiles[selectedChannel].entropy.toFixed(4)],
                             ].map(([label, val]) => (
                               <div key={label} className="bg-slate-800/50 rounded-lg p-2 text-center">
                                 <div className="text-xs text-slate-500">{label}</div>
@@ -485,24 +469,20 @@ const FeatureVisualizer: React.FC = () => {
                   {activeView === "bar" && (
                     <>
                       <p className="text-xs text-slate-500 mb-4">
-                        Ratios β/α (stress cognitif) et θ/α (engagement/fatigue) par canal
+                        β/α (cognitive stress) and θ/α (engagement/fatigue) ratios per channel
                       </p>
                       <ResponsiveContainer width="100%" height={300}>
-                        <BarChart
-                          data={bandBarData}
-                          layout="vertical"
-                          margin={{ left: 40, right: 20, top: 8, bottom: 8 }}
-                        >
+                        <BarChart data={bandBarData} layout="vertical" margin={{ left: 40, right: 20, top: 8, bottom: 8 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" horizontal={false} />
                           <XAxis type="number" stroke="#64748b" fontSize={10} />
                           <YAxis dataKey="channel" type="category" stroke="#64748b" fontSize={9} width={50} />
                           <Tooltip content={<CustomTooltip />} />
-                          <Bar dataKey="beta" fill={BAND_COLORS.beta} name="β/α" radius={[0, 3, 3, 0]} barSize={8} />
+                          <Bar dataKey="beta"  fill={BAND_COLORS.beta}  name="β/α" radius={[0, 3, 3, 0]} barSize={8} />
                           <Bar dataKey="theta" fill={BAND_COLORS.theta} name="θ/α" radius={[0, 3, 3, 0]} barSize={8} />
                         </BarChart>
                       </ResponsiveContainer>
                       <p className="text-xs text-slate-600 mt-2">
-                        β/α élevé → stress cognitif potentiel · θ/α élevé → engagement ou fatigue
+                        High β/α → potential cognitive stress · High θ/α → engagement or fatigue
                       </p>
                     </>
                   )}
@@ -510,36 +490,24 @@ const FeatureVisualizer: React.FC = () => {
                   {activeView === "scatter" && (
                     <>
                       <p className="text-xs text-slate-500 mb-4">
-                        Complexité de Hjorth vs Entropie spectrale — taille = amplitude RMS
+                        Hjorth Complexity vs. Spectral Entropy — size = RMS amplitude
                       </p>
                       <ResponsiveContainer width="100%" height={300}>
                         <ScatterChart margin={{ left: 20, right: 20, top: 8, bottom: 30 }}>
                           <CartesianGrid stroke="#1e293b" />
                           <XAxis
                             dataKey="x"
-                            name="Complexité"
+                            name="Complexity"
                             stroke="#64748b"
                             fontSize={10}
-                            label={{
-                              value: "Complexité Hjorth",
-                              position: "insideBottom",
-                              offset: -10,
-                              fill: "#64748b",
-                              fontSize: 11
-                            }}
+                            label={{ value: "Hjorth Complexity", position: "insideBottom", offset: -10, fill: "#64748b", fontSize: 11 }}
                           />
                           <YAxis
                             dataKey="y"
-                            name="Entropie"
+                            name="Entropy"
                             stroke="#64748b"
                             fontSize={10}
-                            label={{
-                              value: "Entropie",
-                              angle: -90,
-                              position: "insideLeft",
-                              fill: "#64748b",
-                              fontSize: 11
-                            }}
+                            label={{ value: "Entropy", angle: -90, position: "insideLeft", fill: "#64748b", fontSize: 11 }}
                           />
                           <ZAxis dataKey="z" range={[40, 400]} name="RMS" />
                           <Tooltip
@@ -549,8 +517,8 @@ const FeatureVisualizer: React.FC = () => {
                               return (
                                 <div className="bg-slate-900 border border-slate-700 rounded-lg p-3 text-xs">
                                   <p className="text-white font-medium">{d.name}</p>
-                                  <p className="text-slate-400">Complexité: {d.x?.toFixed(4)}</p>
-                                  <p className="text-slate-400">Entropie: {d.y?.toFixed(4)}</p>
+                                  <p className="text-slate-400">Complexity: {d.x?.toFixed(4)}</p>
+                                  <p className="text-slate-400">Entropy: {d.y?.toFixed(4)}</p>
                                 </div>
                               );
                             }}
@@ -569,19 +537,19 @@ const FeatureVisualizer: React.FC = () => {
           <section>
             <SectionHeader
               icon={<TrendingUp className="w-4 h-4" />}
-              title="Carte de puissance spectrale par canal"
+              title="Spectral Power Map by Channel"
               expanded={expanded.bands}
               onToggle={() => toggle("bands")}
             />
             {expanded.bands && (
               <div className="mt-4 card p-4 overflow-x-auto">
                 <p className="text-xs text-slate-500 mb-4">
-                  Puissance normalisée par bande de fréquence pour chaque canal EEG
+                  Normalized band power per frequency band for each EEG channel
                 </p>
                 <table className="w-full text-xs">
                   <thead>
                     <tr>
-                      <th className="text-left text-slate-500 font-medium pb-2 pr-4">Canal</th>
+                      <th className="text-left text-slate-500 font-medium pb-2 pr-4">Channel</th>
                       {["δ Delta", "θ Theta", "α Alpha", "β Beta", "γ Gamma"].map(b => (
                         <th key={b} className="text-slate-500 font-medium pb-2 px-2">{b}</th>
                       ))}
@@ -589,10 +557,10 @@ const FeatureVisualizer: React.FC = () => {
                   </thead>
                   <tbody>
                     {(features.channelProfiles || []).map((ch, i) => {
-                      const bp = features.bandPowers?.[i] || {};
+                      const bp    = features.bandPowers?.[i] || {};
                       const bands = ["delta", "theta", "alpha", "beta", "gamma"];
-                      const vals = bands.map(b => Number(bp[b] ?? 0));
-                      const maxV = Math.max(...vals, 1e-10);
+                      const vals  = bands.map(b => Number(bp[b] ?? 0));
+                      const maxV  = Math.max(...vals, 1e-10);
                       return (
                         <tr
                           key={i}
@@ -628,7 +596,7 @@ const FeatureVisualizer: React.FC = () => {
                   </tbody>
                 </table>
                 <p className="text-xs text-slate-600 mt-3">
-                  Cliquez sur une ligne pour mettre à jour le radar et la vue détaillée ci-dessus.
+                  Click a row to update the radar and detail views above.
                 </p>
               </div>
             )}

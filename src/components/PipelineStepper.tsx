@@ -7,10 +7,10 @@ const PipelineStepper: React.FC = () => {
   const { pipelineStep, isProcessing } = useStore();
 
   const steps = [
-    { id: 0, label: "Signal Acquisition", icon: FileUp, desc: "Upload .MAT EEG data" },
-    { id: 1, label: "Preprocessing", icon: Filter, desc: "ASR, ICA & Filtering" },
-    { id: 2, label: "Feature Extraction", icon: BarChart3, desc: "Time/Freq Domain Features" },
-    { id: 3, label: "Classification", icon: Zap, desc: "Stress Level Prediction" },
+    { id: 0, label: "Signal Acquisition",   icon: FileUp,   desc: "Upload .MAT EEG data" },
+    { id: 1, label: "Preprocessing",        icon: Filter,   desc: "ASR, ICA & Filtering" },
+    { id: 2, label: "Feature Extraction",   icon: BarChart3, desc: "Time/Freq Domain Features" },
+    { id: 3, label: "Classification",       icon: Zap,      desc: "Stress Level Prediction" },
   ];
 
   return (
@@ -24,36 +24,39 @@ const PipelineStepper: React.FC = () => {
         <div className="relative flex justify-between">
           {/* Progress Line */}
           <div className="absolute top-6 left-0 w-full h-0.5 bg-slate-800 -z-10" />
-          <div 
-            className="absolute top-6 left-0 h-0.5 bg-accent-violet transition-all duration-500 -z-10" 
+          <div
+            className="absolute top-6 left-0 h-0.5 bg-accent-violet transition-all duration-500 -z-10"
             style={{ width: `${(pipelineStep / (steps.length - 1)) * 100}%` }}
           />
 
-          {steps.map((step, i) => {
-            const isActive = pipelineStep === step.id;
+          {steps.map((step) => {
+            const isActive    = pipelineStep === step.id;
             const isCompleted = pipelineStep > step.id;
-            const Icon = step.icon;
+            const Icon        = step.icon;
 
             return (
               <div key={step.id} className="flex flex-col items-center text-center w-48">
-                <div 
+                <div
                   className={cn(
                     "w-12 h-12 rounded-full flex items-center justify-center border-2 transition-all duration-300",
-                    isCompleted ? "bg-accent-violet border-accent-violet text-white" :
-                    isActive ? "bg-background border-accent-violet text-accent-violet shadow-[0_0_15px_rgba(124,58,237,0.3)]" :
-                    "bg-background border-slate-800 text-slate-600"
+                    isCompleted
+                      ? "bg-accent-violet border-accent-violet text-white"
+                      : isActive
+                      ? "bg-background border-accent-violet text-accent-violet shadow-[0_0_15px_rgba(124,58,237,0.3)]"
+                      : "bg-background border-slate-800 text-slate-600"
                   )}
                 >
-                  {isCompleted ? <Check className="w-6 h-6" /> : 
-                   isActive && isProcessing ? <Loader2 className="w-6 h-6 animate-spin" /> :
-                   <Icon className="w-6 h-6" />}
+                  {isCompleted ? (
+                    <Check className="w-6 h-6" />
+                  ) : isActive && isProcessing ? (
+                    <Loader2 className="w-6 h-6 animate-spin" />
+                  ) : (
+                    <Icon className="w-6 h-6" />
+                  )}
                 </div>
-                
+
                 <div className="mt-4">
-                  <div className={cn(
-                    "font-bold text-sm mb-1",
-                    isActive ? "text-white" : "text-slate-500"
-                  )}>
+                  <div className={cn("font-bold text-sm mb-1", isActive ? "text-white" : "text-slate-500")}>
                     {step.label}
                   </div>
                   <p className="text-xs text-slate-600 max-w-[120px] mx-auto">{step.desc}</p>
@@ -80,7 +83,7 @@ const PipelineStepper: React.FC = () => {
               </li>
               <li className="flex gap-2">
                 <span className="text-accent-violet">•</span>
-                Ensemble Voting Classifier (XGB+LGBM+Cat)
+                Ensemble Voting Classifier (XGB + LGBM + Cat)
               </li>
             </ul>
           </div>
@@ -93,11 +96,11 @@ const PipelineStepper: React.FC = () => {
             <div className="space-y-4">
               <div className="flex justify-between items-center">
                 <span className="text-xs text-slate-500 uppercase">Latency</span>
-                <span className="text-sm font-mono text-accent-teal">12.4ms</span>
+                <span className="text-sm font-mono text-accent-teal">12.4 ms</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-xs text-slate-500 uppercase">Throughput</span>
-                <span className="text-sm font-mono text-accent-teal">256Hz</span>
+                <span className="text-sm font-mono text-accent-teal">256 Hz</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-xs text-slate-500 uppercase">Buffer Status</span>
