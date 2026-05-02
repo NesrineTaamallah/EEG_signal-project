@@ -87,7 +87,9 @@ The **SAM 40** (Stress-Affect-Meditation 40) dataset was published by the Depart
 
 EEG data were recorded using the **Emotiv Epoch Flex gel kit** with 32 channels following the international 10–20 system. Standard electrode positions include: `Fp1, Fp2, F3, F4, C3, C4, P3, P4, O1, O2, F7, F8, T7, T8, P7, P8`, and others. CMS and DRL reference electrodes were placed on the left and right mastoids.
 
-![EEG Recording Setup](./assets/1-s2.0-S2352340921010465-gr4_lrg.jpg)
+<div align="center">
+  <img src="https://raw.githubusercontent.com/TON-USERNAME/TON-REPO/main/assets/neurostress.png" width="700"/>
+</div>
 
 ### Cognitive Stress Tasks
 
