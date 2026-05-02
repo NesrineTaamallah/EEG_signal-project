@@ -103,6 +103,12 @@ The dataset uses three validated psychophysiological stress induction paradigms,
 
 *A classic cognitive interference paradigm*
 
+
+
+</div>
+
+<div align="center">
+  <img src="src/assets/stroop.jpg" width="700"/>
 </div>
 
 The Stroop Color-Word Test measures **cognitive interference** and **executive function** under stress. Participants are shown color words (e.g., "RED", "BLUE") printed in a **different ink color** (e.g., the word "RED" printed in blue ink). Subjects must name the **ink color**, not read the word.
@@ -123,6 +129,9 @@ The Stroop Color-Word Test measures **cognitive interference** and **executive f
 *A spatial cognition and visual processing test*
 
 </div>
+<div align="center">
+  <img src="src/assets/miroir.jpg" width="700"/>
+</div>
 
 Participants view pairs of mirror images and must decide whether they are **symmetric or asymmetric** under time pressure. This task primarily engages parietal and occipital regions involved in spatial processing.
 
@@ -141,6 +150,9 @@ Participants view pairs of mirror images and must decide whether they are **symm
 
 *Mental calculation under time pressure*
 
+</div>
+<div align="center">
+  <img src="src/assets/math.jpg" width="700"/>
 </div>
 
 Subjects mentally solve arithmetic problems (addition, subtraction, multiplication) and indicate correctness using a **thumbs up or thumbs down** gesture. Problems increase in difficulty across trials.
@@ -645,7 +657,7 @@ neuroctrl/
 
 ---
 
-## 🚀 Installation & Quick Start
+##  Installation & Quick Start
 
 ### Prerequisites
 
@@ -798,7 +810,7 @@ Expected response:
 
 ---
 
-## 📡 API Reference
+##  API Reference
 
 ### POST `/preprocess`
 
@@ -855,7 +867,7 @@ Upload a raw `.mat` EEG file for preprocessing.
 
 ---
 
-## 📈 Results & Performance
+##  Results & Performance
 
 | Metric | Mean | Std Dev |
 |---|---|---|
@@ -869,7 +881,7 @@ Upload a raw `.mat` EEG file for preprocessing.
 
 ---
 
-## 📚 References
+##  References
 
 1. **SAM 40 Dataset:**
    Sharma, M., Achuth, P. V., Deb, D., Tiwari, A. K., & Pachori, R. B. (2022). *SAM 40: Dataset of 40 Subject EEG Recordings to Monitor the Stress, Affect and Meditation*. Data in Brief, 40, 107805. https://doi.org/10.1016/j.dib.2021.107805
