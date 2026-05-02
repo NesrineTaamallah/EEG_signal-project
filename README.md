@@ -11,7 +11,6 @@
 [![Python](https://img.shields.io/badge/Python-3.11+-blue?logo=python)](https://python.org)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)](https://react.dev)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110-009688?logo=fastapi)](https://fastapi.tiangolo.com)
-[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 [![Dataset](https://img.shields.io/badge/Dataset-SAM%2040-orange)](https://www.sciencedirect.com/science/article/pii/S2352340921010465)
 
 </div>
@@ -88,16 +87,7 @@ The **SAM 40** (Stress-Affect-Meditation 40) dataset was published by the Depart
 
 EEG data were recorded using the **Emotiv Epoch Flex gel kit** with 32 channels following the international 10–20 system. Standard electrode positions include: `Fp1, Fp2, F3, F4, C3, C4, P3, P4, O1, O2, F7, F8, T7, T8, P7, P8`, and others. CMS and DRL reference electrodes were placed on the left and right mastoids.
 
-```
-Electrode Layout (10-20 System):
-        Fp1  Fp2
-     F7  F3  Fz  F4  F8
-   FT9 FC5 FC1  FC2 FC6 FT10
-      T7  C3  Cz  C4  T8
-    CP5 CP1       CP2 CP6
-      P7  P3  Pz  P4  P8
-       PO9 O1  Oz  O2 PO10
-```
+![EEG Recording Setup](./assets/1-s2.0-S2352340921010465-gr4_lrg.jpg)
 
 ### Cognitive Stress Tasks
 
