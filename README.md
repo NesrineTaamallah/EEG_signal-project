@@ -878,11 +878,6 @@ Upload a raw `.mat` EEG file for preprocessing.
 
 **Note:** The moderate performance reflects the inherent difficulty of EEG-based stress detection — EEG is subject to high inter-individual variability, and stress is a complex, subjective state. The results are consistent with the state-of-the-art on this dataset.
 
-**Areas for improvement:**
-- Subject-adaptive (personalized) models
-- Deep learning approaches (EEGNet, CNN-LSTM)
-- Additional physiological modalities (GSR, HRV, facial EMG)
-- Longer recording segments for richer feature extraction
 
 ---
 
